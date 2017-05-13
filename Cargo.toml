@@ -1,0 +1,9 @@
+[package]
+name = "gentlemen"
+version = "0.1.0"
+authors = ["Jonas Westlund <jonve547@student.liu.se>"]
+
+[dependencies]
+clippy = "*"
+error-chain = "*"
+nom = "^3.0"
