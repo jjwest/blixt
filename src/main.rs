@@ -1,4 +1,5 @@
-#![feature(plugin)]
+#![feature(plugin, trace_macros)]
+
 #![plugin(clippy)]
 
 #[macro_use]
@@ -8,8 +9,8 @@ extern crate nom;
 
 use std::env;
 use std::fs::File;
-use std::path::Path;
 use std::io::{self, Read};
+use std::path::Path;
 
 pub mod errors;
 pub mod parser;
@@ -44,7 +45,7 @@ fn parse_args() -> Result<Vec<u8>> {
 
     let mut buf = Vec::new();
     file.read_to_end(&mut buf)
-        .chain_err(|| "Failed to read from file")?;
+        .chain_err(|| "Failed reading from file")?;
 
     Ok(buf)
 }
