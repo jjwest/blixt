@@ -5,5 +5,7 @@ authors = ["Jonas Westlund <jonve547@student.liu.se>"]
 
 [dependencies]
 clippy = "*"
+env_logger = "0.4.3"
 error-chain = "*"
+log = "0.3.8"
 nom = "^3.0"

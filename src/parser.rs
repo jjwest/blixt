@@ -12,16 +12,38 @@ impl Parser {
     }
 
     pub fn parse(source: &[u8]) -> Result<i64> {
-        if source.len() > 1 {
-            Ok(30)
-        } else {
-            Err("File is empty".into())
+        Ok(30)
+    }
+}
+
+trait Stmt {
+    fn eval(&mut self);
+}
+
+struct StmtList(Vec<Box<Stmt>>);
+impl StmtList {
+    pub fn new() -> Self {
+        StmtList(Vec::new())
+    }
+
+}
+
+impl Stmt for StmtList {
+    fn eval(&mut self) {
+        for mut stmt in &mut self.0 {
+            stmt.eval();
         }
     }
 }
 
+struct ArithExpr {
+    lhs: BuiltInType,
+    rhs: BuiltInType,
+    operator: ArithOperator,
+}
+
 #[derive(Debug, PartialEq)]
-enum Type {
+enum BuiltInType {
     Bool(bool),
     Float32(f32),
     Float64(f64),
@@ -32,46 +54,80 @@ enum Type {
     Uint64(u64),
 }
 
+enum ArithOperator {
+    Add,
+    Sub,
+    Mult,
+    Div,
+    Mod,
+}
+
+// named!(factor<Expr>,
+//        alt!(
+//            do_parse!(
+//                left: atom >>
+//                operator: map!(
+//                    alt!(tag!("*") | tag!("/")),
+//                    |op: &[u8]| match op[0] as char {
+//                        '*' => ArithOperator::Mult,
+//                        '/' => ArithOperator::Div,
+//                    }
+//                ) >>
+//                right: factor >>
+//                (Expr::ArithExpr {
+//                    left, right, operator
+//                })
+//            )
+//        )
+// );
+
+named!(atom<BuiltInType>, alt!(types));
+
+named!(types<BuiltInType>, alt!(string | boolean | numeral));
+
+named!(numeral<BuiltInType>, alt!(float32 | float64 | int32 | int64 | uint32 | uint64));
 
 named!(identifier<String>,
        map_res!(
-           many1!(alt!(ws!(alphanumeric) | ws!(tag!("_")))),
+           many1!( alt!(ws!(alphanumeric) | ws!(tag!("_"))) ),
            |parts: Vec<&[u8]>| {
-               String::from_utf8(parts
-                                 .into_iter()
-                                 .flat_map(|part| part.iter().cloned())
-                                 .collect())
+               String::from_utf8(
+                   parts
+                       .into_iter()
+                       .flat_map(|part| part.iter().cloned())
+                       .collect()
+               )
            } 
        )
 );
 
 named!(parens, ws!(delimited!(tag!("("), is_not!(")"), tag!(")"))));
 
-named!(string<Type>,
+named!(string<BuiltInType>,
        do_parse!(
            str: map_res!(
                ws!(delimited!(tag!("\""), is_not!("\""), tag!("\""))),
                |bytes: &[u8]| String::from_utf8(bytes.to_vec())
            ) >>
-           (Type::String(str))
+           (BuiltInType::String(str))
        )
 );
 
-named!(float64<Type>,
+named!(float64<BuiltInType>,
        do_parse!(
            res: ws!(double) >>
-           (Type::Float64(res))
+           (BuiltInType::Float64(res))
        )
 );
 
-named!(float32<Type>,
+named!(float32<BuiltInType>,
        do_parse!(
            res: ws!(float) >>
-           (Type::Float32(res))
+           (BuiltInType::Float32(res))
        )
 );
 
-named!(int64<Type>,
+named!(int64<BuiltInType>,
        do_parse!(
            res: map_res!(
                map_res!(
@@ -80,11 +136,11 @@ named!(int64<Type>,
                ),
                str::parse
            ) >>
-           (Type::Int64(res))
+           (BuiltInType::Int64(res))
        )
 );
 
-named!(uint32<Type>,
+named!(uint32<BuiltInType>,
        do_parse!(
            res: map_res!(
                map_res!(
@@ -93,11 +149,11 @@ named!(uint32<Type>,
                ),
                str::parse
            ) >>
-           (Type::Uint32(res))
+           (BuiltInType::Uint32(res))
        )
 );
 
-named!(uint64<Type>,
+named!(uint64<BuiltInType>,
        do_parse!(
            res: map_res!(
                map_res!(
@@ -106,11 +162,11 @@ named!(uint64<Type>,
                ),
                str::parse
            ) >>
-           (Type::Uint64(res))
+           (BuiltInType::Uint64(res))
        )
 );
 
-named!(int32<Type>,
+named!(int32<BuiltInType>,
        do_parse!(
            res: map_res!(
                map_res!(
@@ -119,15 +175,15 @@ named!(int32<Type>,
                ),
                str::parse
            ) >>
-           (Type::Int32(res))
+           (BuiltInType::Int32(res))
        )
 );
 
-named!(boolean<Type>,
+named!(boolean<BuiltInType>,
        map!(
            ws!(alt!(tag!("true") | tag!("false"))),
            |tag: &[u8]| {
-               if tag[0] as char == 't' { Type::Bool(true) } else { Type::Bool(false) }
+               if tag[0] as char == 't' { BuiltInType::Bool(true) } else { BuiltInType::Bool(false) }
            }
        )
 );
@@ -149,12 +205,12 @@ mod tests {
         let source_true = b" true";
         let result_true = boolean(source_true);
         assert!(result_true.is_done());
-        assert_eq!(Type::Bool(true), result_true.unwrap().1);
+        assert_eq!(BuiltInType::Bool(true), result_true.unwrap().1);
 
         let source_false = b" false ";
         let result_false = boolean(source_false);
         assert!(result_false.is_done());
-        assert_eq!(Type::Bool(false), result_false.unwrap().1);
+        assert_eq!(BuiltInType::Bool(false), result_false.unwrap().1);
 
     }
 
@@ -164,7 +220,7 @@ mod tests {
         let result = float64(source);
 
         assert!(result.is_done());
-        assert_eq!(Type::Float64(45.843), result.unwrap().1);
+        assert_eq!(BuiltInType::Float64(45.843), result.unwrap().1);
     }
 
     #[test]
@@ -173,7 +229,7 @@ mod tests {
         let result = int32(source);
 
         assert!(result.is_done());
-        assert_eq!(Type::Int32(45), result.unwrap().1);
+        assert_eq!(BuiltInType::Int32(45), result.unwrap().1);
         
     }
 
@@ -183,7 +239,7 @@ mod tests {
         let result = int64(source);
 
         assert!(result.is_done());
-        assert_eq!(Type::Int64(45), result.unwrap().1);
+        assert_eq!(BuiltInType::Int64(45), result.unwrap().1);
         
     }
 
@@ -193,7 +249,7 @@ mod tests {
         let result = uint32(source);
 
         assert!(result.is_done());
-        assert_eq!(Type::Uint32(45), result.unwrap().1);
+        assert_eq!(BuiltInType::Uint32(45), result.unwrap().1);
     }
 
     #[test]
@@ -202,7 +258,7 @@ mod tests {
         let result = uint64(source);
 
         assert!(result.is_done());
-        assert_eq!(Type::Uint64(45), result.unwrap().1);
+        assert_eq!(BuiltInType::Uint64(45), result.unwrap().1);
     }
 
     #[test]
@@ -211,7 +267,7 @@ mod tests {
         let result = float32(source);
 
         assert!(result.is_done());
-        assert_eq!(Type::Float32(45.843), result.unwrap().1);
+        assert_eq!(BuiltInType::Float32(45.843), result.unwrap().1);
     }
 
     #[test]
@@ -220,6 +276,6 @@ mod tests {
         let result = string(source);
 
         assert!(result.is_done());
-        assert_eq!(Type::String("Hey man!".to_string()), result.unwrap().1);
+        assert_eq!(BuiltInType::String("Hey man!".to_string()), result.unwrap().1);
     }
 }
