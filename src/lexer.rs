@@ -34,7 +34,7 @@ pub enum Token {
 
     // Delimiters
     CloseBrace,
-    CloseIndex,
+    CloseBracket,
     CloseParen,
     OpenBrace,
     OpenBracket,
@@ -113,7 +113,7 @@ named!(delimiter<Token>,
                 '(' => Token::OpenParen,
                 ')' => Token::CloseParen,
                 '[' => Token::OpenBracket,
-                ']' => Token::CloseIndex,
+                ']' => Token::CloseBracket,
                 _ => unreachable!(),
             }
        )
@@ -324,7 +324,7 @@ mod tests {
         result = get_token(remaining);
         assert!(result.is_done());
         let (remaining, token) = result.unwrap();
-        assert_eq!(Token::CloseIndex, token);
+        assert_eq!(Token::CloseBracket, token);
 
         result = get_token(remaining);
         assert!(result.is_done());
