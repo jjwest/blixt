@@ -1,4 +1,6 @@
 10 // + 2 * 4 - 5 * (5 - 4)
-let name be cool
+let name be cool += 2
 { baller }
 4 + 10 * 7
+10 < 2
+5 != 3

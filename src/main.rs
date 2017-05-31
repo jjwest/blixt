@@ -16,9 +16,8 @@ use std::io::Read;
 use std::path::Path;
 
 pub mod errors;
-#[allow(dead_code)]
-pub mod parser;
 pub mod lexer;
+pub mod parser;
 
 use errors::*;
 use lexer::{Lexer, Token};
@@ -26,29 +25,17 @@ use lexer::{Lexer, Token};
 fn main() {
     env_logger::init().unwrap();
 
-    if let Err(e) = parse_args().and_then(run) {
+    if let Err(e) = parse_args().and_then(|src| run(&src)) {
         eprintln!("error: {}", e);
         for e in e.iter().skip(1) {
             eprintln!("caused by: {}", e);
         }
-        // if let Some(backtrace) = e.backtrace() {
-        //     eprintln!("backtrace: {:?}", backtrace);
-        // }
     }
 }
 
-#[allow(needless_pass_by_value)]
-fn run(source: Vec<u8>) -> Result<()> {
-    let mut lexer = Lexer::new(&source);
-    loop {
-        match lexer.next_token() {
-            Token::EOF => {
-                debug!("EOF");
-                break;
-            }
-            token => debug!("{:?}", token),
-        }
-    }
+fn run(source: &[u8]) -> Result<()> {
+    let mut lexer = Lexer::new(source);
+    let _tokens = lexer.generate_tokens()?;
     Ok(())
 }
 
