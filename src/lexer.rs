@@ -106,30 +106,21 @@ named!(get_token<Token>,
 );
 
 named!(delimiter<Token>,
-       map!( ws!(alt!(char!('(')
-                      | char!(')')
-                      | char!('{')
-                      | char!('}')
-                      | char!('[')
-                      | char!(']'))),
-             |delim: char| match delim {
-                 '{' => Token::OpenBrace,
-                 '}' => Token::CloseBrace,
-                 '(' => Token::OpenParen,
-                 ')' => Token::CloseParen,
-                 '[' => Token::OpenBracket,
-                 ']' => Token::CloseIndex,
-                 _ => unreachable!(),
-             }
+       map!(ws!(one_of!("(){}[]")),
+            |delim: char| match delim {
+                '{' => Token::OpenBrace,
+                '}' => Token::CloseBrace,
+                '(' => Token::OpenParen,
+                ')' => Token::CloseParen,
+                '[' => Token::OpenBracket,
+                ']' => Token::CloseIndex,
+                _ => unreachable!(),
+            }
        )
 );
 
 named!(arith_op<Token>,
-       map!(ws!(alt!(char!('+')
-                     | char!('-')
-                     | char!('*')
-                     | char!('/')
-                     | char!('%'))),
+       map!(ws!(one_of!("+-*/%")),
             |delim: char| match delim {
                 '+' => Token::Plus,
                 '-' => Token::Minus,
@@ -225,22 +216,19 @@ named!(string<Token>,
 );
 
 named!(assign_op<Token>,
-       do_parse!(
-           op: map!(
-               map_res!(
-                   ws!(alt!(tag!(":=") | tag!("+=") | tag!("-=") | tag!("*=") | tag!("/="))),
-                   str::from_utf8
-               ),
-               |op: &str| match op {
-                   ":=" => Token::Assign,
-                   "+=" => Token::AddAssign,
-                   "-=" => Token::SubAssign,
-                   "*=" => Token::MultAssign,
-                   "/=" => Token::DivAssign,
-                   _ => unreachable!(),
-               }
-           ) >>
-           (op)
+       map!(
+           map_res!(
+               ws!(alt!(tag!(":=") | tag!("+=") | tag!("-=") | tag!("*=") | tag!("/="))),
+               str::from_utf8
+           ),
+           |op: &str| match op {
+               ":=" => Token::Assign,
+               "+=" => Token::AddAssign,
+               "-=" => Token::SubAssign,
+               "*=" => Token::MultAssign,
+               "/=" => Token::DivAssign,
+               _ => unreachable!(),
+           }
        )
 );
 
