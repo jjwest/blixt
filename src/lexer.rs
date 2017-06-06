@@ -1,6 +1,6 @@
 use std::str;
 
-use nom::{IResult, alpha, alphanumeric, anychar, multispace, not_line_ending, digit};
+use nom::{IResult, alpha, alphanumeric, float, multispace, not_line_ending, digit};
 
 use errors::*;
 
@@ -8,7 +8,7 @@ pub struct Lexer<'a> {
     data: &'a [u8],
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum Token {
     // Comparison operators
     Equal,
@@ -26,16 +26,17 @@ pub enum Token {
     SubAssign,
 
     // Arithmetic operators
+    Asterisk,
     Minus,
     Percent,
     Plus,
     Slash,
-    Star,
 
     // Delimiters
     CloseBrace,
     CloseBracket,
     CloseParen,
+    Comma,
     OpenBrace,
     OpenBracket,
     OpenParen,
@@ -45,13 +46,14 @@ pub enum Token {
     ElseIf,
     Else,
     For,
+    Return,
     While,
-    
-    Char(char),
+
     Comment,
     Eof,
     Ident(String),
     Integer(i32),
+    Float(f32),
     String(String),
 }
 
@@ -62,15 +64,20 @@ impl<'a> Lexer<'a> {
 
     pub fn generate_tokens(&mut self) -> Result<Vec<Token>> {
         let mut tokens = Vec::new();
+
         loop {
             let token = match get_token(self.data) {
                 IResult::Done(remaining, token) => {
                     self.data = remaining;
                     token
                 }
-                IResult::Incomplete(needed) =>
-                    return Err(format!("Incomplete parsing, {:?} bytes missing", needed).into()),
-                IResult::Error(e) => return Err(format!("Parsing error: {}", e).into()), 
+                IResult::Incomplete(needed) => {
+                    return Err(format!("Incomplete parsing, {:?} bytes missing", needed).into(),)
+                }
+                IResult::Error(e) => {
+                    debug!("Error: {:?}", e);
+                    return Err(format!("Could not parse '{}'", e).into());
+                } 
             };
 
             match token {
@@ -81,13 +88,14 @@ impl<'a> Lexer<'a> {
                 token => {
                     debug!("{:?}", token);
                     tokens.push(token);
-                },
+                }
             }
         }
 
         Ok(tokens)
     }
 }
+
 
 named!(get_token<Token>,
        alt!(
@@ -100,8 +108,8 @@ named!(get_token<Token>,
                | comp_op
                | assign_op
                | arith_op
+               | floats
                | integer
-               | any
        )
 );
 
@@ -124,18 +132,11 @@ named!(arith_op<Token>,
             |delim: char| match delim {
                 '+' => Token::Plus,
                 '-' => Token::Minus,
-                '*' => Token::Star,
+                '*' => Token::Asterisk,
                 '/' => Token::Slash,
                 '%' => Token::Percent,
                 _ => unreachable!(),
             }
-       )
-);
-
-named!(any<Token>,
-       do_parse!(
-           ch: ws!(anychar) >>
-           (Token::Char(ch))
        )
 );
 
@@ -259,6 +260,13 @@ named!(integer<Token>,
        )
 );
 
+named!(floats<Token>,
+       do_parse!(
+           as_digit: ws!(float) >>
+           (Token::Float(as_digit))
+       )
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,7 +287,7 @@ mod tests {
         assert!(result.is_done());
         let (remaining, token) = result.unwrap();
         assert_eq!(Token::If, token);
-        
+
         result = get_token(remaining);
         assert!(result.is_done());
         let (remaining, token) = result.unwrap();
@@ -310,7 +318,7 @@ mod tests {
         assert!(result.is_done());
         let (remaining, token) = result.unwrap();
         assert_eq!(Token::OpenParen, token);
-        
+
         result = get_token(remaining);
         assert!(result.is_done());
         let (remaining, token) = result.unwrap();
@@ -359,7 +367,7 @@ mod tests {
         assert!(result.is_done());
         let (remaining, token) = result.unwrap();
         assert_eq!(Token::Plus, token);
-        
+
         let result = get_token(remaining);
         assert!(result.is_done());
         let (remaining, token) = result.unwrap();
@@ -368,7 +376,7 @@ mod tests {
         let result = get_token(remaining);
         assert!(result.is_done());
         let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Star, token);
+        assert_eq!(Token::Asterisk, token);
 
         let result = get_token(remaining);
         assert!(result.is_done());
@@ -379,7 +387,7 @@ mod tests {
         assert!(result.is_done());
         let (_, token) = result.unwrap();
         assert_eq!(Token::Percent, token);
-        
+
     }
 
     #[test]
@@ -412,7 +420,7 @@ mod tests {
         assert!(result.is_done());
         let (remaining, token) = result.unwrap();
         assert_eq!(Token::AddAssign, token);
-        
+
         let result = get_token(remaining);
         assert!(result.is_done());
         let (remaining, token) = result.unwrap();
@@ -465,6 +473,14 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_float32() {
+        let source = b" 457.45";
+        let result = get_token(source);
+        assert!(result.is_done());
+        assert_eq!(Token::Float(457.45), result.unwrap().1);
+    }
+
+    #[test]
     fn test_parse_comment() {
         let source = b" // hello there!!\n";
         let result = get_token(source);
@@ -472,4 +488,3 @@ mod tests {
         assert_eq!(Token::Comment, result.unwrap().1);
     }
 }
-

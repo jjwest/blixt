@@ -1,6 +1,7 @@
-#![feature(plugin, trace_macros)]
+#![feature(plugin)]
 
-#![plugin(clippy)]
+// #![plugin(clippy)]
+#![allow(dead_code)]
 
 #[macro_use]
 extern crate error_chain;
@@ -15,9 +16,10 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-pub mod errors;
-pub mod lexer;
-pub mod parser;
+mod ast;
+mod errors;
+mod lexer;
+mod parser;
 
 use errors::*;
 use lexer::{Lexer, Token};

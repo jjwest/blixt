@@ -1,34 +1,54 @@
+use std::iter::Peekable;
+use std::vec::Drain;
+
+use ast::{Expr, StmtList, ValueType};
+use errors::*;
 use lexer::Token;
 
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    ast: StmtList,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Parser { tokens, pos: 0 }
+        Parser {
+            tokens,
+            pos: 0,
+            ast: StmtList::new(),
+        }
     }
 
-    pub fn generate_syntax_tree(&mut self) {}
+    pub fn parse(&mut self) -> Result<StmtList> {
+        let mut ast = StmtList::new();
+        Ok(ast)
+    }
+
+    fn expression(&mut self) {}
+
+    fn logical_expression(&mut self) -> Result<Expr> {}
+
+    fn arithmetic_expression(&mut self) -> Result<Expr> {}
+
+    fn identifier(&mut self) -> Result<Expr> {}
+
+    fn function_call(&mut self) -> Result<Expr> {}
+
+    fn builtin_type(&mut self) -> Result<Expr> {}
 }
 
-type NodeId = usize;
-
-struct Block {
-    stmts: Vec<Stmt>,
-}
-
-struct Stmt {
-    id: NodeId,
-    node: StmtKind,
-}
-
-enum StmtKind {
-    Assign,
-    Expr,
-    If,
-    Io,
-    Loop,
-    Return,
+fn expect(value: &Token, expected: Token) -> Result<()> {
+    if *value == expected {
+        Ok(())
+    } else {
+        Err(
+            format!(
+                "Error while parsing. Expected {:?}, got {:?}",
+                expected,
+                value
+            )
+                    .into(),
+        )
+    }
 }
