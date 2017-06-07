@@ -1,6 +1,6 @@
 #![feature(plugin)]
 
-// #![plugin(clippy)]
+#![plugin(clippy)]
 #![allow(dead_code)]
 
 #[macro_use]
