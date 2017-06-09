@@ -1,3 +1,5 @@
+ 5 == true
+19 - 4 * (2 + 3) / 4
 10 45.920 20 // + 2 * 4 - 5 * (5 - 4)
 let things be noice += 2
 { baller }

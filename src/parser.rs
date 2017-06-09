@@ -32,7 +32,7 @@ impl<'a> Parser<'a> {
         trace!("Entered expression");
 
         if let Some(logical_expr) = self.logical_expression() {
-            let op = match self.tokens.peek() {
+            let operator = match self.tokens.peek() {
                 Some(&Token::Lesser) => Some(LogicOp::Lesser),
                 Some(&Token::Greater) => Some(LogicOp::Greater),
                 Some(&Token::GreaterEqual) => Some(LogicOp::GreaterEqual),
@@ -41,7 +41,8 @@ impl<'a> Parser<'a> {
                 _ => None,
             };
 
-            if let Some(op) = op {
+            if let Some(operator) = operator {
+                // We peeked a valid operator earlier, so we remove it
                 let _ = self.tokens.next();
                 Some(
                     Box::new(
@@ -51,7 +52,7 @@ impl<'a> Parser<'a> {
                                 Some(expr) => expr,
                                 None => return None,
                             },
-                            operator: op,
+                            operator,
                         },
                     ),
                 )
@@ -67,7 +68,7 @@ impl<'a> Parser<'a> {
         trace!("Entered logical_expression");
 
         if let Some(term) = self.term() {
-            let op = match self.tokens.peek() {
+            let operator = match self.tokens.peek() {
                 Some(&Token::Lesser) => Some(LogicOp::Lesser),
                 Some(&Token::Greater) => Some(LogicOp::Greater),
                 Some(&Token::GreaterEqual) => Some(LogicOp::GreaterEqual),
@@ -76,7 +77,8 @@ impl<'a> Parser<'a> {
                 _ => None,
             };
 
-            if let Some(op) = op {
+            if let Some(operator) = operator {
+                // We peeked a valid operator earlier, so we remove it
                 let _ = self.tokens.next();
                 Some(
                     Box::new(
@@ -86,7 +88,7 @@ impl<'a> Parser<'a> {
                                 Some(expr) => expr,
                                 None => return None,
                             },
-                            operator: op,
+                            operator,
                         },
                     ),
                 )
@@ -102,13 +104,14 @@ impl<'a> Parser<'a> {
         trace!("Entered term");
 
         if let Some(term) = self.factor() {
-            let op = match self.tokens.peek() {
+            let operator = match self.tokens.peek() {
                 Some(&Token::Plus) => Some(ArithmeticOp::Add),
                 Some(&Token::Minus) => Some(ArithmeticOp::Sub),
                 _ => None,
             };
 
-            if let Some(op) = op {
+            if let Some(operator) = operator {
+                // We peeked a valid operator earlier, so we remove it
                 let _ = self.tokens.next();
                 Some(
                     Box::new(
@@ -118,7 +121,7 @@ impl<'a> Parser<'a> {
                                 Some(expr) => expr,
                                 None => return None,
                             },
-                            operator: op,
+                            operator,
                         },
                     ),
                 )
@@ -135,14 +138,15 @@ impl<'a> Parser<'a> {
         trace!("Entered factor");
 
         if let Some(factor) = self.atom() {
-            let op = match self.tokens.peek() {
+            let operator = match self.tokens.peek() {
                 Some(&Token::Asterisk) => Some(ArithmeticOp::Mult),
                 Some(&Token::Slash) => Some(ArithmeticOp::Div),
                 Some(&Token::Percent) => Some(ArithmeticOp::Mod),
                 _ => None,
             };
 
-            if let Some(op) = op {
+            if let Some(operator) = operator {
+                // We peeked a valid operator earlier, so we remove it
                 let _ = self.tokens.next();
                 Some(
                     Box::new(
@@ -152,7 +156,7 @@ impl<'a> Parser<'a> {
                                 Some(expr) => expr,
                                 None => return None,
                             },
-                            operator: op,
+                            operator,
                         },
                     ),
                 )
@@ -180,6 +184,7 @@ impl<'a> Parser<'a> {
             Some(Token::Ident(name)) => Some(Box::new(Expr::Ident(name))),
             Some(Token::Integer(value)) => Some(Box::new(Expr::Value(ValueType::Int32(value)))),
             Some(Token::Float(value)) => Some(Box::new(Expr::Value(ValueType::Float32(value)))),
+            Some(Token::Bool(value)) => Some(Box::new(Expr::Value(ValueType::Bool(value)))),
             _ => None,
         }
     }
