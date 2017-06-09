@@ -1,119 +1,186 @@
+use std::iter::Peekable;
 use std::mem;
+use std::vec::Drain;
 
-use ast::{ArithmeticOp, Expr, StmtList, ValueType};
+use ast::{ArithmeticOp, Expr, LogicOp, Stmt, StmtList, ValueType};
 use errors::*;
 use lexer::Token;
 
-pub struct Parser {
-    tokens: Vec<Token>,
-    pos: usize,
+pub struct Parser<'a> {
+    tokens: Peekable<Drain<'a, Token>>,
     ast: StmtList,
 }
 
-impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+impl<'a> Parser<'a> {
+    pub fn new(tokens: &'a mut Vec<Token>) -> Self {
         Parser {
-            tokens,
-            pos: 0,
+            tokens: tokens.drain(..).peekable(),
             ast: StmtList::new(),
         }
     }
 
     pub fn parse(&mut self) -> Result<StmtList> {
         let mut ast = StmtList::new();
+        match self.expression() {
+            Some(expr) => ast.add_stmt(Stmt::Expr(*expr)),
+            None => return Err("Failed to parsing".into()),
+        }
         Ok(ast)
     }
 
-    fn expression(&mut self, pos: usize) {}
+    fn expression(&mut self) -> Option<Box<Expr>> {
+        trace!("Entered expression");
 
-    // fn logical_expression(&mut self, pos: usize) -> Result<Expr> {}
+        if let Some(logical_expr) = self.logical_expression() {
+            let op = match self.tokens.peek() {
+                Some(&Token::Lesser) => Some(LogicOp::Lesser),
+                Some(&Token::Greater) => Some(LogicOp::Greater),
+                Some(&Token::GreaterEqual) => Some(LogicOp::GreaterEqual),
+                Some(&Token::LesserEqual) => Some(LogicOp::LesserEqual),
+                Some(&Token::Equal) => Some(LogicOp::Equal),
+                _ => None,
+            };
 
-    fn factor(&mut self, pos: usize) -> Option<Box<Expr>> {
-        let lhs = self.atom(pos);
-        let op = self.tokens.get_mut(pos + 1);
-        let rhs = self.factor(self.pos + 2);
-
-        match (lhs, op, rhs) {
-            (Some(lhs), Some(&mut Token::Asterisk), Some(rhs)) => {
+            if let Some(op) = op {
+                let _ = self.tokens.next();
                 Some(
                     Box::new(
-                        Expr::ArithmeticExpr {
-                            lhs,
-                            rhs,
-                            operator: ArithmeticOp::Mult,
+                        Expr::LogicalExpr {
+                            lhs: logical_expr,
+                            rhs: match self.expression() {
+                                Some(expr) => expr,
+                                None => return None,
+                            },
+                            operator: op,
                         },
                     ),
                 )
+            } else {
+                Some(logical_expr)
             }
-            (Some(lhs), Some(&mut Token::Slash), Some(rhs)) => {
+        } else {
+            None
+        }
+    }
+
+    fn logical_expression(&mut self) -> Option<Box<Expr>> {
+        trace!("Entered logical_expression");
+
+        if let Some(term) = self.term() {
+            let op = match self.tokens.peek() {
+                Some(&Token::Lesser) => Some(LogicOp::Lesser),
+                Some(&Token::Greater) => Some(LogicOp::Greater),
+                Some(&Token::GreaterEqual) => Some(LogicOp::GreaterEqual),
+                Some(&Token::LesserEqual) => Some(LogicOp::LesserEqual),
+                Some(&Token::Equal) => Some(LogicOp::Equal),
+                _ => None,
+            };
+
+            if let Some(op) = op {
+                let _ = self.tokens.next();
                 Some(
                     Box::new(
-                        Expr::ArithmeticExpr {
-                            lhs,
-                            rhs,
-                            operator: ArithmeticOp::Div,
+                        Expr::LogicalExpr {
+                            lhs: term,
+                            rhs: match self.expression() {
+                                Some(expr) => expr,
+                                None => return None,
+                            },
+                            operator: op,
                         },
                     ),
                 )
+            } else {
+                Some(term)
             }
-            (Some(lhs), Some(&mut Token::Percent), Some(rhs)) => {
+        } else {
+            None
+        }
+    }
+
+    fn term(&mut self) -> Option<Box<Expr>> {
+        trace!("Entered term");
+
+        if let Some(term) = self.factor() {
+            let op = match self.tokens.peek() {
+                Some(&Token::Plus) => Some(ArithmeticOp::Add),
+                Some(&Token::Minus) => Some(ArithmeticOp::Sub),
+                _ => None,
+            };
+
+            if let Some(op) = op {
+                let _ = self.tokens.next();
                 Some(
                     Box::new(
                         Expr::ArithmeticExpr {
-                            lhs,
-                            rhs,
-                            operator: ArithmeticOp::Mod,
+                            lhs: term,
+                            rhs: match self.term() {
+                                Some(expr) => expr,
+                                None => return None,
+                            },
+                            operator: op,
                         },
                     ),
                 )
+            } else {
+                Some(term)
             }
+        } else {
+            None
+        }
+
+    }
+
+    fn factor(&mut self) -> Option<Box<Expr>> {
+        trace!("Entered factor");
+
+        if let Some(factor) = self.atom() {
+            let op = match self.tokens.peek() {
+                Some(&Token::Asterisk) => Some(ArithmeticOp::Mult),
+                Some(&Token::Slash) => Some(ArithmeticOp::Div),
+                Some(&Token::Percent) => Some(ArithmeticOp::Mod),
+                _ => None,
+            };
+
+            if let Some(op) = op {
+                let _ = self.tokens.next();
+                Some(
+                    Box::new(
+                        Expr::ArithmeticExpr {
+                            lhs: factor,
+                            rhs: match self.factor() {
+                                Some(expr) => expr,
+                                None => return None,
+                            },
+                            operator: op,
+                        },
+                    ),
+                )
+            } else {
+                Some(factor)
+            }
+        } else {
+            None
+        }
+
+
+    }
+
+    fn atom(&mut self) -> Option<Box<Expr>> {
+        trace!("Entered atom");
+
+        match self.tokens.next() {
+            Some(Token::OpenParen) => {
+                let expr = self.expression();
+                match self.tokens.next() {
+                    Some(Token::CloseParen) => expr,
+                    _ => None,
+                }
+            }
+            Some(Token::Ident(name)) => Some(Box::new(Expr::Ident(name))),
+            Some(Token::Integer(value)) => Some(Box::new(Expr::Value(ValueType::Int32(value)))),
+            Some(Token::Float(value)) => Some(Box::new(Expr::Value(ValueType::Float32(value)))),
             _ => None,
         }
-    }
-
-    fn atom(&mut self, pos: usize) -> Option<Box<Expr>> {
-        if let Some(expr) = self.builtin_type(pos) {
-            return Some(expr);
-        }
-        if let Some(expr) = self.identifier(pos) {
-            return Some(expr);
-        }
-
-        None
-    }
-
-    fn identifier(&mut self, pos: usize) -> Option<Box<Expr>> {
-        match self.tokens.get_mut(pos) {
-            Some(&mut Token::Ident(name)) => Some(Box::new(Expr::Ident(name))),
-            _ => None,
-        }
-    }
-
-    // fn function_call(&mut self) -> Result<Expr> {}
-
-    fn builtin_type(&mut self, pos: usize) -> Option<Box<Expr>> {
-        match self.tokens.get_mut(pos) {            
-            Some(&mut Token::Integer(value)) => Some(Box::new(Expr::Value(ValueType::Int32(value))),),
-            _ => None,
-        }
-    }
-
-    fn take_token(&mut self, offset: usize) -> Token {
-        mem::replace(&mut self.tokens[self.pos + offset], Token::Consumed)
-    }
-}
-
-fn expect(value: &Token, expected: &Token) -> Result<()> {
-    if *value == *expected {
-        Ok(())
-    } else {
-        Err(
-            format!(
-                "Error while parsing. Expected {:?}, got {:?}",
-                expected,
-                value
-            )
-                    .into(),
-        )
     }
 }

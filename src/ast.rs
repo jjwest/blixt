@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct StmtList {
     statements: Vec<Stmt>,
 }
@@ -7,9 +8,8 @@ impl StmtList {
         StmtList { statements: Vec::new() }
     }
 
-    pub fn add_stmt(&mut self, kind: StmtKind) {
-        self.statements
-            .push(Stmt { kind });
+    pub fn add_stmt(&mut self, stmt: Stmt) {
+        self.statements.push(stmt);
     }
 
     pub fn eval(&mut self) {
@@ -19,30 +19,28 @@ impl StmtList {
     }
 }
 
-pub struct Stmt {
-    kind: StmtKind,
+#[derive(Debug)]
+pub enum Stmt {
+    Expr(Expr),
+    StmtList(StmtList),
+    Return,
 }
 
 impl Stmt {
     pub fn eval(&mut self) {}
 }
 
-pub enum StmtKind {
-    Expr(Expr),
-    StmtList(StmtList),
-    Return,
-}
-
+#[derive(Debug)]
 pub enum Expr {
     LogicalExpr {
+        operator: LogicOp,
         lhs: Box<Expr>,
         rhs: Box<Expr>,
-        operator: LogicOp,
     },
     ArithmeticExpr {
+        operator: ArithmeticOp,
         lhs: Box<Expr>,
         rhs: Box<Expr>,
-        operator: ArithmeticOp,
     },
     Ident(String),
     FunctionCall(String),
@@ -50,9 +48,11 @@ pub enum Expr {
 }
 
 
+#[derive(Debug)]
 pub enum ValueType {
     Bool(bool),
     Int32(i32),
+    Float32(f32),
 }
 
 struct Variable {
@@ -82,11 +82,13 @@ impl Scope {
     }
 }
 
+#[derive(Debug)]
 enum Numeral {
     Int32(i32),
     Float32(f32),
 }
 
+#[derive(Debug)]
 pub enum ArithmeticOp {
     Add,
     Sub,
@@ -95,6 +97,7 @@ pub enum ArithmeticOp {
     Mod,
 }
 
+#[derive(Debug)]
 pub enum LogicOp {
     Lesser,
     Greater,
@@ -103,6 +106,7 @@ pub enum LogicOp {
     GreaterEqual,
 }
 
+#[derive(Debug)]
 pub enum UnaryOp {
     Not,
 }

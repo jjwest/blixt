@@ -23,6 +23,7 @@ mod parser;
 
 use errors::*;
 use lexer::{Lexer, Token};
+use parser::Parser;
 
 fn main() {
     env_logger::init().unwrap();
@@ -37,7 +38,10 @@ fn main() {
 
 fn run(source: &[u8]) -> Result<()> {
     let mut lexer = Lexer::new(source);
-    let _tokens = lexer.generate_tokens()?;
+    let mut tokens = lexer.generate_tokens()?;
+    let mut parser = Parser::new(&mut tokens);
+    let program = parser.parse();
+    println!("{:#?}", program);
     Ok(())
 }
 

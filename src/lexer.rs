@@ -10,6 +10,11 @@ pub struct Lexer<'a> {
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
+    // Logical Operators
+    And,
+    Or,
+    Not,
+
     // Comparison operators
     Equal,
     Greater,
@@ -106,6 +111,7 @@ named!(get_token<Token>,
                | ident
                | comment
                | comp_op
+               | logical_op
                | assign_op
                | arith_op
                | floats
@@ -137,6 +143,19 @@ named!(arith_op<Token>,
                 '%' => Token::Percent,
                 _ => unreachable!(),
             }
+       )
+);
+
+named!(logical_op<Token>,
+       map!(
+           map_res!(ws!(alt!(tag!("&&") | tag!("||") | tag!("!"))),
+                    str::from_utf8),
+           |op: &str| match op {
+               "&&" => Token::And,
+               "||" => Token::Or,
+               "!" => Token::Not,
+               _ => unreachable!(),
+           }
        )
 );
 
@@ -308,6 +327,26 @@ mod tests {
         let (_, token) = result.unwrap();
         assert_eq!(Token::While, token);
 
+    }
+
+    #[test]
+    fn test_parse_logical_operator() {
+        let source = b" && || !";
+
+        let mut result = get_token(source);
+        assert!(result.is_done());
+        let (remaining, token) = result.unwrap();
+        assert_eq!(Token::And, token);
+
+        result = get_token(remaining);
+        assert!(result.is_done());
+        let (remaining, token) = result.unwrap();
+        assert_eq!(Token::Or, token);
+
+        result = get_token(remaining);
+        assert!(result.is_done());
+        let (_, token) = result.unwrap();
+        assert_eq!(Token::Not, token);
     }
 
     #[test]
