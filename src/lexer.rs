@@ -57,6 +57,7 @@ pub enum Token {
     Comment,
     Eof,
     Ident(String),
+    Bool(bool),
     Integer(i32),
     Float(f32),
     String(String),
@@ -108,6 +109,7 @@ named!(get_token<Token>,
                | string
                | delimiter
                | keyword
+               | boolean
                | ident
                | comment
                | comp_op
@@ -174,6 +176,18 @@ named!(keyword<Token>,
                "else" => Token::Else,
                "for" => Token::For,
                "while" => Token::While,
+               _ => unreachable!(),
+           }
+       )
+);
+
+named!(boolean<Token>,
+       map!(
+           map_res!(ws!(alt!(tag!("true") | tag!("false"))),
+                    str::from_utf8),
+           |token: &str| match token {
+               "true" => Token::Bool(true),
+               "false" => Token::Bool(false),
                _ => unreachable!(),
            }
        )
@@ -331,7 +345,7 @@ mod tests {
 
     #[test]
     fn test_parse_logical_operator() {
-        let source = b" && || !";
+        let source = b" && || ! ";
 
         let mut result = get_token(source);
         assert!(result.is_done());
@@ -386,7 +400,7 @@ mod tests {
 
     #[test]
     fn test_parse_ident() {
-        let source = b" name num_rows_10 ";
+        let source = b" name num_rows_10 true";
         let result = get_token(source);
         assert!(result.is_done());
         let (remaining, token) = result.unwrap();
@@ -394,8 +408,13 @@ mod tests {
 
         let result = get_token(remaining);
         assert!(result.is_done());
-        let (_, token) = result.unwrap();
+        let (remaining, token) = result.unwrap();
         assert_eq!(Token::Ident("num_rows_10".to_owned()), token);
+
+        let result = get_token(remaining);
+        assert!(result.is_done());
+        let (_, token) = result.unwrap();
+        assert_ne!(Token::Ident("true".to_string()), token)
     }
 
     #[test]
@@ -440,7 +459,7 @@ mod tests {
 
     #[test]
     fn test_parse_int() {
-        let source = b" 457";
+        let source = b" 457 ";
         let result = get_token(source);
         assert!(result.is_done());
         assert_eq!(Token::Integer(457), result.unwrap().1);
@@ -525,5 +544,19 @@ mod tests {
         let result = get_token(source);
         assert!(result.is_done());
         assert_eq!(Token::Comment, result.unwrap().1);
+    }
+
+    #[test]
+    fn test_parse_bool() {
+        let source = b" true false";
+        let result = get_token(source);
+        assert!(result.is_done());
+        let (remaining, token) = result.unwrap();
+        assert_eq!(Token::Bool(true), token);
+
+        let result = get_token(remaining);
+        assert!(result.is_done());
+        let (_, token) = result.unwrap();
+        assert_eq!(Token::Bool(false), token);
     }
 }
