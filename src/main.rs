@@ -38,8 +38,8 @@ fn main() {
 
 fn run(source: &[u8]) -> Result<()> {
     let mut lexer = Lexer::new(source);
-    let mut tokens = lexer.generate_tokens()?;
-    let mut parser = Parser::new(&mut tokens);
+    let tokens = lexer.generate_tokens()?;
+    let mut parser = Parser::new(tokens);
     let program = parser.parse();
     println!("{:#?}", program);
     Ok(())

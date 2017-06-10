@@ -1,21 +1,28 @@
 use errors::*;
 
 #[derive(Debug)]
-pub struct StmtList(Vec<Stmt>);
+pub struct StmtList {
+    statements: Vec<Stmt>,
+    scope: Scope,
+}
 
 impl StmtList {
     pub fn new() -> Self {
-        StmtList(Vec::new())
+        StmtList {
+            statements: Vec::new(),
+            scope: Scope::new(),
+        }
     }
 
     pub fn add_stmt(&mut self, stmt: Stmt) {
-        self.0.push(stmt);
+        self.statements.push(stmt);
     }
 
-    pub fn eval(&mut self) {
-        for stmt in &mut self.0 {
-            stmt.eval();
+    pub fn eval(&mut self) -> Result<ValueType> {
+        for stmt in &mut self.statements {
+            stmt.eval(&mut self.scope)?;
         }
+        Ok(ValueType::Nil)
     }
 }
 
@@ -27,7 +34,26 @@ pub enum Stmt {
 }
 
 impl Stmt {
-    pub fn eval(&mut self) {}
+    pub fn eval(self, scope: &mut Scope) -> Result<ValueType> {
+        match self {
+            Stmt::Expr(expr) => expr.eval(scope),
+            Stmt::StmtList(stmts) => stmts.eval(),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Assignment {
+    variable: String,
+    value: ValueType,
+}
+
+impl Assignment {
+    fn eval(self, scope: &mut Scope) -> Result<ValueType> {
+        scope.set_variable(self.variable, self.value);
+        Ok(ValueType::Nil)
+    }
 }
 
 #[derive(Debug)]
@@ -76,6 +102,7 @@ pub enum ValueType {
     Bool(bool),
     Int32(i32),
     Float32(f32),
+    Nil,
 }
 
 impl ::std::ops::Add for ValueType {
@@ -94,6 +121,7 @@ impl ::std::ops::Add for ValueType {
             (Float32(_), Bool(_)) |
             (Bool(_), Float32(_)) => Err("Cannot add a float with a bool".into()),
             (Bool(_), Bool(_)) => Err("Cannot add bools".into()),
+            _ => unreachable!(),
         }
     }
 }
@@ -114,6 +142,7 @@ impl ::std::ops::Sub for ValueType {
             (Float32(_), Bool(_)) |
             (Bool(_), Float32(_)) => Err("Cannot subtract a float with a bool".into()),
             (Bool(_), Bool(_)) => Err("Cannot subtract bools".into()),
+            _ => unreachable!(),
         }
     }
 }
@@ -134,6 +163,7 @@ impl ::std::ops::Mul for ValueType {
             (Float32(_), Bool(_)) |
             (Bool(_), Float32(_)) => Err("Cannot multiply a float with a bool".into()),
             (Bool(_), Bool(_)) => Err("Cannot multiply bools".into()),
+            _ => unreachable!(),
         }
     }
 }
@@ -154,6 +184,7 @@ impl ::std::ops::Div for ValueType {
             (Float32(_), Bool(_)) |
             (Bool(_), Float32(_)) => Err("Cannot divide a float with a bool".into()),
             (Bool(_), Bool(_)) => Err("Cannot divide bools".into()),
+            _ => unreachable!(),
         }
     }
 }
@@ -174,16 +205,19 @@ impl ::std::ops::Rem for ValueType {
             (Float32(_), Bool(_)) |
             (Bool(_), Float32(_)) |
             (Bool(_), Bool(_)) => Err("Cannot use modulo with bools".into()),
+            _ => unreachable!(),
         }
     }
 }
 
+#[derive(Debug)]
 struct Variable {
     defined_in_scope_level: u32,
     name: String,
     value: ValueType,
 }
 
+#[derive(Debug)]
 struct Scope {
     statements: Vec<Stmt>,
     variables: Vec<Variable>,
