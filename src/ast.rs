@@ -1,3 +1,5 @@
+use std::fmt;
+
 use errors::*;
 
 #[derive(Debug)]
@@ -18,9 +20,9 @@ impl StmtList {
         self.statements.push(stmt);
     }
 
-    pub fn eval(&mut self) -> Result<ValueType> {
-        for stmt in &mut self.statements {
-            stmt.eval(&mut self.scope)?;
+    pub fn eval(mut self) -> Result<ValueType> {
+        for stmt in self.statements {
+            println!("{}", stmt.eval(&mut self.scope)?);
         }
         Ok(ValueType::Nil)
     }
@@ -28,22 +30,29 @@ impl StmtList {
 
 #[derive(Debug)]
 pub enum Stmt {
+    Assignment { variable: String, expr: Expr },
     Expr(Expr),
     StmtList(StmtList),
-    Return,
+    Return(ValueType),
 }
 
 impl Stmt {
     pub fn eval(self, scope: &mut Scope) -> Result<ValueType> {
         match self {
+            Stmt::Assignment { variable, expr } => {
+                let value = expr.eval(scope)?;
+                scope.set_variable(variable, value);
+                Ok(ValueType::Nil)
+            }
             Stmt::Expr(expr) => expr.eval(scope),
-            Stmt::StmtList(stmts) => stmts.eval(),
-            _ => unimplemented!(),
+            Stmt::StmtList(list) => list.eval(),
+            Stmt::Return(value) => Ok(value),
         }
     }
 }
 
 #[derive(Debug)]
+<<<<<<< variant A
 struct Assignment {
     variable: String,
     value: ValueType,
@@ -57,6 +66,8 @@ impl Assignment {
 }
 
 #[derive(Debug)]
+>>>>>>> variant B
+======= end
 pub enum Expr {
     ArithmeticExpr {
         operator: ArithmeticOp,
@@ -105,6 +116,19 @@ pub enum ValueType {
     Nil,
 }
 
+impl fmt::Display for ValueType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ValueType::Bool(val) => write!(f, "{}", val)?,
+            ValueType::Int32(val) => write!(f, "{}", val)?,
+            ValueType::Float32(val) => write!(f, "{}", val)?,
+            ValueType::Nil => write!(f, "nil")?,
+        }
+
+        Ok(())
+    }
+}
+
 impl ::std::ops::Add for ValueType {
     type Output = Result<ValueType>;
 
@@ -121,7 +145,7 @@ impl ::std::ops::Add for ValueType {
             (Float32(_), Bool(_)) |
             (Bool(_), Float32(_)) => Err("Cannot add a float with a bool".into()),
             (Bool(_), Bool(_)) => Err("Cannot add bools".into()),
-            _ => unreachable!(),
+            _ => Err("Cannot add with nil".into()),
         }
     }
 }
@@ -142,7 +166,7 @@ impl ::std::ops::Sub for ValueType {
             (Float32(_), Bool(_)) |
             (Bool(_), Float32(_)) => Err("Cannot subtract a float with a bool".into()),
             (Bool(_), Bool(_)) => Err("Cannot subtract bools".into()),
-            _ => unreachable!(),
+            _ => Err("Cannot subtract with nil".into()),
         }
     }
 }
@@ -163,7 +187,7 @@ impl ::std::ops::Mul for ValueType {
             (Float32(_), Bool(_)) |
             (Bool(_), Float32(_)) => Err("Cannot multiply a float with a bool".into()),
             (Bool(_), Bool(_)) => Err("Cannot multiply bools".into()),
-            _ => unreachable!(),
+            _ => Err("Cannot multiply with nil".into()),
         }
     }
 }
@@ -184,7 +208,7 @@ impl ::std::ops::Div for ValueType {
             (Float32(_), Bool(_)) |
             (Bool(_), Float32(_)) => Err("Cannot divide a float with a bool".into()),
             (Bool(_), Bool(_)) => Err("Cannot divide bools".into()),
-            _ => unreachable!(),
+            _ => Err("Cannot divide with nil".into()),
         }
     }
 }
@@ -205,7 +229,7 @@ impl ::std::ops::Rem for ValueType {
             (Float32(_), Bool(_)) |
             (Bool(_), Float32(_)) |
             (Bool(_), Bool(_)) => Err("Cannot use modulo with bools".into()),
-            _ => unreachable!(),
+            _ => Err("Cannot modulo with nil".into()),
         }
     }
 }
@@ -218,13 +242,21 @@ struct Variable {
 }
 
 #[derive(Debug)]
-struct Scope {
+pub struct Scope {
     statements: Vec<Stmt>,
     variables: Vec<Variable>,
     current_scope_level: u32,
 }
 
 impl Scope {
+    fn new() -> Self {
+        Scope {
+            statements: Vec::new(),
+            variables: Vec::new(),
+            current_scope_level: 0,
+        }
+    }
+
     fn get_variable(&self, variable: &str) -> Option<&ValueType> {
         for var in &self.variables {
             if var.name == variable {
