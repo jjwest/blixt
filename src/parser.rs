@@ -1,4 +1,4 @@
-use ast::{ArithmeticOp, Expr, LogicOp, Stmt, StmtList, ValueType};
+use ast::{Assignment, ArithmeticOp, Expr, LogicOp, ParameterList, Stmt, StmtList, ValueType};
 use errors::*;
 use lexer::Token;
 
@@ -18,17 +18,49 @@ impl Parser {
     pub fn parse(&mut self) -> Result<StmtList> {
         let mut syntax_tree = StmtList::new();
 
-        syntax_tree.add_stmt(
-            match self.expression() {
-                Some(expr) => Stmt::Expr(*expr),
-                None => return Err("Error when parsing expression".into()),
-            },
-        );
+        syntax_tree.add_stmt(match self.statement() {
+            Some(stmt) => stmt,
+            None => return Err("Error while parsing".into()),
+        });
 
         Ok(syntax_tree)
     }
 
-    // fn assignment(&mut self) -> Option<>
+    fn statement(&mut self) -> Option<Stmt> {
+        trace!("Entered statement");
+
+        if let Some(assignment) = self.assignment() {
+            return Some(Stmt::Assignment(assignment));
+        }
+        if let Some(expr) = self.expression() {
+            return Some(Stmt::Expr(*expr));
+        }
+
+        None
+    }
+
+    fn assignment(&mut self) -> Option<Assignment> {
+        trace!("Entered assignment");
+
+        let assigment = match (self.tokens.get(0), self.tokens.get(1)) {
+            (Some(&Token::Ident(_)), Some(&Token::Assign)) => true,
+            _ => false,
+        };
+
+        if assigment {
+            let ident = match self.tokens.remove(0) {
+                Token::Ident(ident) => ident,
+                _ => return None,
+            };
+
+            self.tokens.remove(0);
+            let expr = self.expression().expect("Expression");
+            let assigment = Assignment::new(ident, *expr);
+            Some(assigment)
+        } else {
+            None
+        }
+    }
 
     fn expression(&mut self) -> Option<Box<Expr>> {
         trace!("Entered expression");
@@ -46,18 +78,14 @@ impl Parser {
             if let Some(operator) = operator {
                 // We peeked a valid operator earlier, so we remove it
                 self.tokens.remove(0);
-                Some(
-                    Box::new(
-                        Expr::LogicalExpr {
-                            lhs: logical_expr,
-                            rhs: match self.expression() {
-                                Some(expr) => expr,
-                                None => return None,
-                            },
-                            operator,
-                        },
-                    ),
-                )
+                Some(Box::new(Expr::LogicalExpr {
+                    lhs: logical_expr,
+                    rhs: match self.expression() {
+                        Some(expr) => expr,
+                        None => return None,
+                    },
+                    operator,
+                }))
             } else {
                 Some(logical_expr)
             }
@@ -82,18 +110,14 @@ impl Parser {
             if let Some(operator) = operator {
                 // We peeked a valid operator earlier, so we remove it
                 self.tokens.remove(0);
-                Some(
-                    Box::new(
-                        Expr::LogicalExpr {
-                            lhs: term,
-                            rhs: match self.expression() {
-                                Some(expr) => expr,
-                                None => return None,
-                            },
-                            operator,
-                        },
-                    ),
-                )
+                Some(Box::new(Expr::LogicalExpr {
+                    lhs: term,
+                    rhs: match self.expression() {
+                        Some(expr) => expr,
+                        None => return None,
+                    },
+                    operator,
+                }))
             } else {
                 Some(term)
             }
@@ -114,19 +138,15 @@ impl Parser {
 
             if let Some(operator) = operator {
                 // We peeked a valid operator earlier, so we remove it
-                let _ = self.tokens.remove(0);
-                Some(
-                    Box::new(
-                        Expr::ArithmeticExpr {
-                            lhs: term,
-                            rhs: match self.term() {
-                                Some(expr) => expr,
-                                None => return None,
-                            },
-                            operator,
-                        },
-                    ),
-                )
+                self.tokens.remove(0);
+                Some(Box::new(Expr::ArithmeticExpr {
+                    lhs: term,
+                    rhs: match self.term() {
+                        Some(expr) => expr,
+                        None => return None,
+                    },
+                    operator,
+                }))
             } else {
                 Some(term)
             }
@@ -149,19 +169,15 @@ impl Parser {
 
             if let Some(operator) = operator {
                 // We peeked a valid operator earlier, so we remove it
-                let _ = self.tokens.remove(0);
-                Some(
-                    Box::new(
-                        Expr::ArithmeticExpr {
-                            lhs: factor,
-                            rhs: match self.factor() {
-                                Some(expr) => expr,
-                                None => return None,
-                            },
-                            operator,
-                        },
-                    ),
-                )
+                self.tokens.remove(0);
+                Some(Box::new(Expr::ArithmeticExpr {
+                    lhs: factor,
+                    rhs: match self.factor() {
+                        Some(expr) => expr,
+                        None => return None,
+                    },
+                    operator,
+                }))
             } else {
                 Some(factor)
             }
@@ -187,6 +203,7 @@ impl Parser {
             Token::Integer(value) => Some(Box::new(Expr::Value(ValueType::Int32(value)))),
             Token::Float(value) => Some(Box::new(Expr::Value(ValueType::Float32(value)))),
             Token::Bool(value) => Some(Box::new(Expr::Value(ValueType::Bool(value)))),
+            Token::String(value) => Some(Box::new(Expr::Value(ValueType::String(value)))),
             _ => None,
         }
     }

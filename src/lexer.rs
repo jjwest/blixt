@@ -54,6 +54,7 @@ pub enum Token {
     Return,
     While,
 
+    Print,
     Comment,
     Eof,
     Ident(String),
@@ -78,7 +79,9 @@ impl<'a> Lexer<'a> {
                     token
                 }
                 IResult::Incomplete(needed) => {
-                    return Err(format!("Incomplete parsing, {:?} bytes missing", needed).into(),)
+                    return Err(
+                        format!("Incomplete parsing, {:?} bytes missing", needed).into(),
+                    )
                 }
                 IResult::Error(e) => {
                     debug!("Error: {:?}", e);

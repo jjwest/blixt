@@ -30,44 +30,80 @@ impl StmtList {
 
 #[derive(Debug)]
 pub enum Stmt {
-    Assignment { variable: String, expr: Expr },
+    Assignment(Assignment),
     Expr(Expr),
     StmtList(StmtList),
     Return(ValueType),
+    Print(Print),
 }
 
 impl Stmt {
     pub fn eval(self, scope: &mut Scope) -> Result<ValueType> {
         match self {
-            Stmt::Assignment { variable, expr } => {
-                let value = expr.eval(scope)?;
-                scope.set_variable(variable, value);
+            Stmt::Assignment(assignment) => {
+                let value = assignment.expr.eval(scope)?;
+                scope.set_variable(assignment.variable, value);
                 Ok(ValueType::Nil)
             }
             Stmt::Expr(expr) => expr.eval(scope),
             Stmt::StmtList(list) => list.eval(),
             Stmt::Return(value) => Ok(value),
+            Stmt::Print(print) => {
+                print.eval(scope)?;
+                Ok(ValueType::Nil)
+            }
         }
     }
 }
 
 #[derive(Debug)]
-<<<<<<< variant A
-struct Assignment {
+pub struct Print {
+    args: Vec<Expr>,
+}
+
+impl Print {
+    fn eval(self, scope: &mut Scope) -> Result<()> {
+        for arg in self.args {
+            print!("{}", arg.eval(scope)?);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct ParameterList {
+    params: Vec<Expr>,
+}
+
+impl ParameterList {
+    pub fn new() -> ParameterList {
+        ParameterList { params: Vec::new() }
+    }
+
+    pub fn add_param(&mut self, expr: Expr) {
+        self.params.push(expr);
+    }
+}
+
+#[derive(Debug)]
+pub struct Assignment {
     variable: String,
-    value: ValueType,
+    expr: Expr,
 }
 
 impl Assignment {
+    pub fn new(variable: String, expr: Expr) -> Self {
+        Assignment { variable, expr }
+    }
+
     fn eval(self, scope: &mut Scope) -> Result<ValueType> {
-        scope.set_variable(self.variable, self.value);
+        let value = self.expr.eval(scope)?;
+        scope.set_variable(self.variable, value);
         Ok(ValueType::Nil)
     }
 }
 
 #[derive(Debug)]
->>>>>>> variant B
-======= end
 pub enum Expr {
     ArithmeticExpr {
         operator: ArithmeticOp,
@@ -113,16 +149,18 @@ pub enum ValueType {
     Bool(bool),
     Int32(i32),
     Float32(f32),
+    String(String),
     Nil,
 }
 
 impl fmt::Display for ValueType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            ValueType::Nil => write!(f, "nil")?,
             ValueType::Bool(val) => write!(f, "{}", val)?,
             ValueType::Int32(val) => write!(f, "{}", val)?,
             ValueType::Float32(val) => write!(f, "{}", val)?,
-            ValueType::Nil => write!(f, "nil")?,
+            ValueType::String(ref val) => write!(f, "{}", val)?,
         }
 
         Ok(())
@@ -267,19 +305,14 @@ impl Scope {
     }
 
     fn set_variable(&mut self, name: String, value: ValueType) {
-        if let Some(pos) = self.variables
-               .iter()
-               .position(|var| var.name == name) {
+        if let Some(pos) = self.variables.iter().position(|var| var.name == name) {
             self.variables[pos].value = value;
         } else {
-            self.variables
-                .push(
-                    Variable {
-                        defined_in_scope_level: self.current_scope_level,
-                        name,
-                        value,
-                    },
-                );
+            self.variables.push(Variable {
+                defined_in_scope_level: self.current_scope_level,
+                name,
+                value,
+            });
         }
     }
 
@@ -291,8 +324,9 @@ impl Scope {
         assert!(self.current_scope_level > 0);
 
         let current_scope = self.current_scope_level;
-        self.variables
-            .retain(|var| var.defined_in_scope_level != current_scope);
+        self.variables.retain(|var| {
+            var.defined_in_scope_level != current_scope
+        });
         self.current_scope_level -= 1;
     }
 }
