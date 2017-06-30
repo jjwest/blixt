@@ -53,8 +53,8 @@ pub enum Token {
     For,
     Return,
     While,
-
     Print,
+
     Comment,
     Eof,
     Ident(String),
@@ -62,6 +62,8 @@ pub enum Token {
     Integer(i32),
     Float(f32),
     String(String),
+
+    Consumed,
 }
 
 impl<'a> Lexer<'a> {
@@ -170,6 +172,7 @@ named!(keyword<Token>,
                              | tag!("else if")
                              | tag!("else")
                              | tag!("for")
+                             | tag!("print")
                              | tag!("while"))),
                     str::from_utf8
            ),
@@ -178,6 +181,7 @@ named!(keyword<Token>,
                "else if" => Token::ElseIf,
                "else" => Token::Else,
                "for" => Token::For,
+               "print" => Token::Print,
                "while" => Token::While,
                _ => unreachable!(),
            }

@@ -58,11 +58,15 @@ impl Stmt {
 
 #[derive(Debug)]
 pub struct Print {
-    args: Vec<Expr>,
+    args: ParameterList,
 }
 
 impl Print {
-    fn eval(self, scope: &mut Scope) -> Result<()> {
+    pub fn new(args: ParameterList) -> Print {
+        Print { args }
+    }
+
+    pub fn eval(self, scope: &mut Scope) -> Result<()> {
         for arg in self.args {
             print!("{}", arg.eval(scope)?);
         }
@@ -70,20 +74,7 @@ impl Print {
     }
 }
 
-#[derive(Debug)]
-pub struct ParameterList {
-    params: Vec<Expr>,
-}
-
-impl ParameterList {
-    pub fn new() -> ParameterList {
-        ParameterList { params: Vec::new() }
-    }
-
-    pub fn add_param(&mut self, expr: Expr) {
-        self.params.push(expr);
-    }
-}
+pub type ParameterList = Vec<Expr>;
 
 #[derive(Debug)]
 pub struct Assignment {
@@ -96,7 +87,7 @@ impl Assignment {
         Assignment { variable, expr }
     }
 
-    fn eval(self, scope: &mut Scope) -> Result<ValueType> {
+    pub fn eval(self, scope: &mut Scope) -> Result<ValueType> {
         let value = self.expr.eval(scope)?;
         scope.set_variable(self.variable, value);
         Ok(ValueType::Nil)
@@ -121,7 +112,7 @@ pub enum Expr {
 }
 
 impl Expr {
-    fn eval(self, scope: &Scope) -> Result<ValueType> {
+    pub fn eval(self, scope: &Scope) -> Result<ValueType> {
         match self {
             Expr::ArithmeticExpr { operator, lhs, rhs } => {
                 match operator {
@@ -135,7 +126,7 @@ impl Expr {
             Expr::Ident(name) => {
                 match scope.get_variable(&name) {
                     Some(value) => Ok(value.clone()),
-                    None => Err(format!("Variable {} is undefined", name).into()),
+                    None => Err(format!("Variable '{}' is undefined", name).into()),
                 }
             }
             Expr::Value(value) => Ok(value),
@@ -260,10 +251,10 @@ impl ::std::ops::Rem for ValueType {
         match (self, other) {
             (Int32(a), Int32(b)) => Ok(Int32(a % b)),
             (Float32(a), Float32(b)) => Ok(Float32(a % b)),
-            (Int32(_), Float32(_)) |
+            (Int32(_), Float32(_)) => Err("Cannot divide a int with an float".into()),
             (Float32(_), Int32(_)) => Err("Cannot divide a float with an int".into()),
-            (Int32(_), Bool(_)) |
-            (Bool(_), Int32(_)) => Err("Cannot divide a float with a bool".into()),
+            (Int32(_), Bool(_)) => Err("Cannot divide an int with a bool".into()),
+            (Bool(_), Int32(_)) => Err("Cannot divide a bool with a float".into()),
             (Float32(_), Bool(_)) |
             (Bool(_), Float32(_)) |
             (Bool(_), Bool(_)) => Err("Cannot use modulo with bools".into()),

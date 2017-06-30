@@ -1,4 +1,4 @@
-#![feature(plugin)]
+#![feature(plugin, slice_patterns)]
 
 #![plugin(clippy)]
 #![allow(dead_code)]

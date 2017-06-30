@@ -1,10 +1,13 @@
-use ast::{Assignment, ArithmeticOp, Expr, LogicOp, ParameterList, Stmt, StmtList, ValueType};
+use std::mem;
+
+use ast::{Assignment, ArithmeticOp, Expr, LogicOp, ParameterList, Print, Stmt, StmtList, ValueType};
 use errors::*;
 use lexer::Token;
 
 pub struct Parser {
     tokens: Vec<Token>,
     ast: StmtList,
+    pos: usize,
 }
 
 impl Parser {
@@ -12,6 +15,7 @@ impl Parser {
         Parser {
             tokens,
             ast: StmtList::new(),
+            pos: 0,
         }
     }
 
@@ -26,58 +30,101 @@ impl Parser {
         Ok(syntax_tree)
     }
 
+    fn next_token(&mut self) -> Token {
+        let token = mem::replace(&mut self.tokens[self.pos], Token::Consumed);
+        self.pos += 1;
+        token
+    }
+
+    fn peek(&mut self, len: usize) -> Option<&[Token]> {
+        if self.pos + len < self.tokens.len() {
+            Some(&self.tokens[self.pos..self.pos + len])
+        } else {
+            None
+        }
+    }
+
     fn statement(&mut self) -> Option<Stmt> {
         trace!("Entered statement");
 
         if let Some(assignment) = self.assignment() {
+            debug!("assignment");
             return Some(Stmt::Assignment(assignment));
         }
         if let Some(expr) = self.expression() {
+            debug!("expression");
             return Some(Stmt::Expr(*expr));
         }
 
         None
     }
 
-    fn assignment(&mut self) -> Option<Assignment> {
-        trace!("Entered assignment");
+    // fn print(&mut self) -> Option<Print> {
+    //     if self.tokens[0] == Token::Print && self.tokens[1] == Token::OpenParen {
 
-        let assigment = match (self.tokens.get(0), self.tokens.get(1)) {
-            (Some(&Token::Ident(_)), Some(&Token::Assign)) => true,
-            _ => false,
-        };
+    //     } else {
+    //         None
+    //     }
+    // }
 
-        if assigment {
-            let ident = match self.tokens.remove(0) {
-                Token::Ident(ident) => ident,
-                _ => return None,
-            };
-
-            self.tokens.remove(0);
-            let expr = self.expression().expect("Expression");
-            let assigment = Assignment::new(ident, *expr);
-            Some(assigment)
+    fn parameter_list(&mut self) -> Option<ParameterList> {
+        let mut params = ParameterList::new();
+        self.parameter(&mut params);
+        if !params.is_empty() {
+            Some(params)
         } else {
             None
         }
+    }
+
+    fn parameter(&mut self, list: &mut ParameterList) {
+        if let Some(expr) = self.expression() {
+            list.push(*expr);
+            if self.tokens[0] == Token::Comma {
+                self.next_token();
+                self.parameter(list);
+            }
+        }
+    }
+
+
+    fn assignment(&mut self) -> Option<Assignment> {
+        trace!("Entered assignment");
+
+        match self.peek(2) {
+            Some(&[Token::Ident(_), Token::Assign]) => {}
+            _ => return None,
+        };
+
+        let ident = match self.next_token() {
+            Token::Ident(ident) => ident,
+            _ => return None,
+        };
+
+        // And the assign token
+        self.next_token();
+
+        let expr = self.expression().expect("Expected expr");
+        let assignment = Assignment::new(ident, *expr);
+        Some(assignment)
     }
 
     fn expression(&mut self) -> Option<Box<Expr>> {
         trace!("Entered expression");
 
         if let Some(logical_expr) = self.logical_expression() {
-            let operator = match self.tokens.get(0) {
-                Some(&Token::Lesser) => Some(LogicOp::Lesser),
-                Some(&Token::Greater) => Some(LogicOp::Greater),
-                Some(&Token::GreaterEqual) => Some(LogicOp::GreaterEqual),
-                Some(&Token::LesserEqual) => Some(LogicOp::LesserEqual),
-                Some(&Token::Equal) => Some(LogicOp::Equal),
+            let operator = match self.tokens[self.pos] {
+                Token::Lesser => Some(LogicOp::Lesser),
+                Token::Greater => Some(LogicOp::Greater),
+                Token::GreaterEqual => Some(LogicOp::GreaterEqual),
+                Token::LesserEqual => Some(LogicOp::LesserEqual),
+                Token::Equal => Some(LogicOp::Equal),
                 _ => None,
             };
 
             if let Some(operator) = operator {
                 // We peeked a valid operator earlier, so we remove it
-                self.tokens.remove(0);
+                self.pos += 1;
                 Some(Box::new(Expr::LogicalExpr {
                     lhs: logical_expr,
                     rhs: match self.expression() {
@@ -109,7 +156,7 @@ impl Parser {
 
             if let Some(operator) = operator {
                 // We peeked a valid operator earlier, so we remove it
-                self.tokens.remove(0);
+                self.pos += 1;
                 Some(Box::new(Expr::LogicalExpr {
                     lhs: term,
                     rhs: match self.expression() {
@@ -138,7 +185,7 @@ impl Parser {
 
             if let Some(operator) = operator {
                 // We peeked a valid operator earlier, so we remove it
-                self.tokens.remove(0);
+                self.pos += 1;
                 Some(Box::new(Expr::ArithmeticExpr {
                     lhs: term,
                     rhs: match self.term() {
@@ -169,7 +216,7 @@ impl Parser {
 
             if let Some(operator) = operator {
                 // We peeked a valid operator earlier, so we remove it
-                self.tokens.remove(0);
+                self.pos += 1;
                 Some(Box::new(Expr::ArithmeticExpr {
                     lhs: factor,
                     rhs: match self.factor() {
@@ -191,10 +238,10 @@ impl Parser {
     fn atom(&mut self) -> Option<Box<Expr>> {
         trace!("Entered atom");
 
-        match self.tokens.remove(0) {
+        match self.next_token() {
             Token::OpenParen => {
                 let expr = self.expression();
-                match self.tokens.remove(0) {
+                match self.next_token() {
                     Token::CloseParen => expr,
                     _ => None,
                 }
