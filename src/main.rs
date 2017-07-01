@@ -13,7 +13,7 @@ extern crate env_logger;
 
 use std::env;
 use std::fs::File;
-use std::io::Read;
+use std::io::{BufReader, Read};
 use std::path::Path;
 
 mod ast;
@@ -41,17 +41,17 @@ fn run(source: &[u8]) -> Result<()> {
     let tokens = lexer.generate_tokens()?;
     let mut parser = Parser::new(tokens);
     let program = parser.parse()?;
-    println!("Result: {}", program.eval()?);
-    Ok(())
+    program.eval()?;
 
+    Ok(())
 }
 
 fn parse_args() -> Result<Vec<u8>> {
     let file_name = env::args().nth(1).ok_or("No file provided")?;
 
-    let mut file = File::open(Path::new(&file_name)).chain_err(
+    let mut file = BufReader::new(File::open(Path::new(&file_name)).chain_err(
         || "Could not open file",
-    )?;
+    )?);
 
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).chain_err(
