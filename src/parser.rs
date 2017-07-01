@@ -1,6 +1,6 @@
 use std::mem;
 
-use ast::{Assignment, ArithmeticOp, Expr, LogicOp, ParameterList, Print, Stmt, StmtList, ValueType};
+use ast::{Assignment, ArithmeticOp, Expr, LogicOp, ParameterList, Stmt, StmtList, ValueType};
 use errors::*;
 use lexer::Token;
 
@@ -22,16 +22,18 @@ impl Parser {
     pub fn parse(&mut self) -> Result<StmtList> {
         let mut syntax_tree = StmtList::new();
 
-        syntax_tree.add_stmt(match self.statement() {
-            Some(stmt) => stmt,
-            None => return Err("Error while parsing".into()),
-        });
-
+        while self.pos < self.tokens.len() {
+            syntax_tree.add_stmt(match self.statement() {
+                Some(stmt) => stmt,
+                None => return Err("Error while parsing".into()),
+            });
+        }
         Ok(syntax_tree)
     }
 
     fn next_token(&mut self) -> Token {
         let token = mem::replace(&mut self.tokens[self.pos], Token::Consumed);
+        debug!("Consumed {:?}", token);
         self.pos += 1;
         token
     }
@@ -58,14 +60,6 @@ impl Parser {
 
         None
     }
-
-    // fn print(&mut self) -> Option<Print> {
-    //     if self.tokens[0] == Token::Print && self.tokens[1] == Token::OpenParen {
-
-    //     } else {
-    //         None
-    //     }
-    // }
 
     fn parameter_list(&mut self) -> Option<ParameterList> {
         let mut params = ParameterList::new();
@@ -111,63 +105,33 @@ impl Parser {
 
     fn expression(&mut self) -> Option<Box<Expr>> {
         trace!("Entered expression");
-
-        if let Some(logical_expr) = self.logical_expression() {
-            let operator = match self.tokens[self.pos] {
-                Token::Lesser => Some(LogicOp::Lesser),
-                Token::Greater => Some(LogicOp::Greater),
-                Token::GreaterEqual => Some(LogicOp::GreaterEqual),
-                Token::LesserEqual => Some(LogicOp::LesserEqual),
-                Token::Equal => Some(LogicOp::Equal),
-                _ => None,
-            };
-
-            if let Some(operator) = operator {
-                // We peeked a valid operator earlier, so we remove it
-                self.pos += 1;
-                Some(Box::new(Expr::LogicalExpr {
-                    lhs: logical_expr,
-                    rhs: match self.expression() {
-                        Some(expr) => expr,
-                        None => return None,
-                    },
-                    operator,
-                }))
-            } else {
-                Some(logical_expr)
-            }
-        } else {
-            None
-        }
+        self.logical_expression()
     }
 
     fn logical_expression(&mut self) -> Option<Box<Expr>> {
         trace!("Entered logical_expression");
 
         if let Some(term) = self.term() {
-            let operator = match self.tokens.get(0) {
-                Some(&Token::Lesser) => Some(LogicOp::Lesser),
-                Some(&Token::Greater) => Some(LogicOp::Greater),
-                Some(&Token::GreaterEqual) => Some(LogicOp::GreaterEqual),
-                Some(&Token::LesserEqual) => Some(LogicOp::LesserEqual),
-                Some(&Token::Equal) => Some(LogicOp::Equal),
-                _ => None,
+            let operator = match self.peek(1) {
+                Some(&[Token::Lesser]) => LogicOp::Lesser,
+                Some(&[Token::Greater]) => LogicOp::Greater,
+                Some(&[Token::GreaterEqual]) => LogicOp::GreaterEqual,
+                Some(&[Token::LesserEqual]) => LogicOp::LesserEqual,
+                Some(&[Token::Equal]) => LogicOp::Equal,
+                _ => return Some(term),
             };
 
-            if let Some(operator) = operator {
-                // We peeked a valid operator earlier, so we remove it
-                self.pos += 1;
-                Some(Box::new(Expr::LogicalExpr {
-                    lhs: term,
-                    rhs: match self.expression() {
-                        Some(expr) => expr,
-                        None => return None,
-                    },
-                    operator,
-                }))
-            } else {
-                Some(term)
-            }
+            // And the operator
+            self.next_token();
+
+            Some(Box::new(Expr::LogicalExpr {
+                lhs: term,
+                rhs: match self.expression() {
+                    Some(expr) => expr,
+                    None => return None,
+                },
+                operator,
+            }))
         } else {
             None
         }
@@ -177,26 +141,23 @@ impl Parser {
         trace!("Entered term");
 
         if let Some(term) = self.factor() {
-            let operator = match self.tokens.get(0) {
-                Some(&Token::Plus) => Some(ArithmeticOp::Add),
-                Some(&Token::Minus) => Some(ArithmeticOp::Sub),
-                _ => None,
+            let operator = match self.peek(1) {
+                Some(&[Token::Plus]) => ArithmeticOp::Add,
+                Some(&[Token::Minus]) => ArithmeticOp::Sub,
+                _ => return Some(term),
             };
 
-            if let Some(operator) = operator {
-                // We peeked a valid operator earlier, so we remove it
-                self.pos += 1;
-                Some(Box::new(Expr::ArithmeticExpr {
-                    lhs: term,
-                    rhs: match self.term() {
-                        Some(expr) => expr,
-                        None => return None,
-                    },
-                    operator,
-                }))
-            } else {
-                Some(term)
-            }
+            // And the operator
+            self.next_token();
+
+            Some(Box::new(Expr::ArithmeticExpr {
+                lhs: term,
+                rhs: match self.term() {
+                    Some(expr) => expr,
+                    None => return None,
+                },
+                operator,
+            }))
         } else {
             None
         }
@@ -207,27 +168,24 @@ impl Parser {
         trace!("Entered factor");
 
         if let Some(factor) = self.atom() {
-            let operator = match self.tokens.get(0) {
-                Some(&Token::Asterisk) => Some(ArithmeticOp::Mult),
-                Some(&Token::Slash) => Some(ArithmeticOp::Div),
-                Some(&Token::Percent) => Some(ArithmeticOp::Mod),
-                _ => None,
+            let operator = match self.peek(1) {
+                Some(&[Token::Asterisk]) => ArithmeticOp::Mult,
+                Some(&[Token::Slash]) => ArithmeticOp::Div,
+                Some(&[Token::Percent]) => ArithmeticOp::Mod,
+                _ => return Some(factor),
             };
 
-            if let Some(operator) = operator {
-                // We peeked a valid operator earlier, so we remove it
-                self.pos += 1;
-                Some(Box::new(Expr::ArithmeticExpr {
-                    lhs: factor,
-                    rhs: match self.factor() {
-                        Some(expr) => expr,
-                        None => return None,
-                    },
-                    operator,
-                }))
-            } else {
-                Some(factor)
-            }
+            // And the operator
+            self.next_token();
+
+            Some(Box::new(Expr::ArithmeticExpr {
+                lhs: factor,
+                rhs: match self.factor() {
+                    Some(expr) => expr,
+                    None => return None,
+                },
+                operator,
+            }))
         } else {
             None
         }

@@ -34,7 +34,6 @@ pub enum Stmt {
     Expr(Expr),
     StmtList(StmtList),
     Return(ValueType),
-    Print(Print),
 }
 
 impl Stmt {
@@ -48,29 +47,7 @@ impl Stmt {
             Stmt::Expr(expr) => expr.eval(scope),
             Stmt::StmtList(list) => list.eval(),
             Stmt::Return(value) => Ok(value),
-            Stmt::Print(print) => {
-                print.eval(scope)?;
-                Ok(ValueType::Nil)
-            }
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct Print {
-    args: ParameterList,
-}
-
-impl Print {
-    pub fn new(args: ParameterList) -> Print {
-        Print { args }
-    }
-
-    pub fn eval(self, scope: &mut Scope) -> Result<()> {
-        for arg in self.args {
-            print!("{}", arg.eval(scope)?);
-        }
-        Ok(())
     }
 }
 
