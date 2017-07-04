@@ -1,31 +1,33 @@
 use std::mem;
 
-use ast::{Assignment, ArithmeticOp, Expr, LogicOp, ParameterList, Stmt, StmtList, ValueType};
+use ast::{Ast, Assignment, ArithmeticOp, Expr, Function, LogicOp, ParameterList, Stmt, ValueType};
 use errors::*;
 use lexer::Token;
 
 pub struct Parser {
     tokens: Vec<Token>,
-    ast: StmtList,
     pos: usize,
+}
+
+enum Parsed<T> {
+    Some(T),
+    None,
+    Err(Error),
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Parser {
-            tokens,
-            ast: StmtList::new(),
-            pos: 0,
-        }
+        Parser { tokens, pos: 0 }
     }
 
-    pub fn parse(&mut self) -> Result<StmtList> {
-        let mut syntax_tree = StmtList::new();
+    pub fn parse(&mut self) -> Result<Ast> {
+        let mut syntax_tree = Ast::new();
 
         while self.pos < self.tokens.len() {
             syntax_tree.add_stmt(match self.statement() {
-                Some(stmt) => stmt,
-                None => return Err("Error while parsing".into()),
+                Parsed::Some(stmt) => stmt,
+                Parsed::None => return Err("Error while parsing".into()),
+                Parsed::Err(e) => return Err(e),
             });
         }
         Ok(syntax_tree)
@@ -46,33 +48,47 @@ impl Parser {
         }
     }
 
-    fn statement(&mut self) -> Option<Stmt> {
+    fn statement(&mut self) -> Parsed<Stmt> {
         trace!("Entered statement");
 
-        if let Some(assignment) = self.assignment() {
+        if let Parsed::Some(assignment) = self.assignment() {
             debug!("assignment");
-            return Some(Stmt::Assignment(assignment));
+            return Parsed::Some(Stmt::Assignment(assignment));
         }
-        if let Some(expr) = self.expression() {
+        if let Parsed::Some(expr) = self.expression() {
             debug!("expression");
-            return Some(Stmt::Expr(*expr));
+            return Parsed::Some(Stmt::Expr(*expr));
         }
 
-        None
+        Parsed::None
     }
 
-    fn parameter_list(&mut self) -> Option<ParameterList> {
+    // fn function_declaration(&mut self) -> Parsed<Function> {
+    //     if self.peek(1) != Some(&[Token::FunctionDeclaration]) {
+    //         return Parsed::None;
+    //     } else {
+    //         self.next_token();
+    //     }
+
+    //     let ident = match self.expression() {
+    //         Parsed::Some(expr) => expr,
+    //         Parsed::None => return Parsed::None,
+    //     };
+
+    // }
+
+    fn parameter_list(&mut self) -> Parsed<ParameterList> {
         let mut params = ParameterList::new();
         self.parameter(&mut params);
         if !params.is_empty() {
-            Some(params)
+            Parsed::Some(params)
         } else {
-            None
+            Parsed::None
         }
     }
 
     fn parameter(&mut self, list: &mut ParameterList) {
-        if let Some(expr) = self.expression() {
+        if let Parsed::Some(expr) = self.expression() {
             list.push(*expr);
             if self.tokens[0] == Token::Comma {
                 self.next_token();
@@ -82,134 +98,181 @@ impl Parser {
     }
 
 
-    fn assignment(&mut self) -> Option<Assignment> {
+    fn assignment(&mut self) -> Parsed<Assignment> {
         trace!("Entered assignment");
 
         match self.peek(2) {
             Some(&[Token::Ident(_), Token::Assign]) => {}
-            _ => return None,
+            _ => return Parsed::None,
         };
 
         let ident = match self.next_token() {
             Token::Ident(ident) => ident,
-            _ => return None,
+            _ => unreachable!(),
         };
 
         // And the assign token
         self.next_token();
 
-        let expr = self.expression().expect("Expected expr");
+        let expr = match self.expression() {
+            Parsed::Some(expr) => expr,
+            Parsed::None => return Parsed::Err("Expected expression".into()),
+            Parsed::Err(e) => return Parsed::Err(e),
+        };
+
         let assignment = Assignment::new(ident, *expr);
-        Some(assignment)
+        Parsed::Some(assignment)
     }
 
-    fn expression(&mut self) -> Option<Box<Expr>> {
+    fn expression(&mut self) -> Parsed<Box<Expr>> {
         trace!("Entered expression");
         self.logical_expression()
     }
 
-    fn logical_expression(&mut self) -> Option<Box<Expr>> {
+    fn logical_expression(&mut self) -> Parsed<Box<Expr>> {
         trace!("Entered logical_expression");
 
-        if let Some(term) = self.term() {
+        if let Parsed::Some(term) = self.term() {
             let operator = match self.peek(1) {
                 Some(&[Token::Lesser]) => LogicOp::Lesser,
                 Some(&[Token::Greater]) => LogicOp::Greater,
                 Some(&[Token::GreaterEqual]) => LogicOp::GreaterEqual,
                 Some(&[Token::LesserEqual]) => LogicOp::LesserEqual,
                 Some(&[Token::Equal]) => LogicOp::Equal,
-                _ => return Some(term),
+                _ => return Parsed::Some(term),
             };
 
             // And the operator
             self.next_token();
 
-            Some(Box::new(Expr::LogicalExpr {
+            Parsed::Some(Box::new(Expr::LogicalExpr {
                 lhs: term,
                 rhs: match self.expression() {
-                    Some(expr) => expr,
-                    None => return None,
+                    Parsed::Some(expr) => expr,
+                    Parsed::None => return Parsed::None,
+                    Parsed::Err(e) => return Parsed::Err(e),
                 },
                 operator,
             }))
         } else {
-            None
+            Parsed::None
         }
     }
 
-    fn term(&mut self) -> Option<Box<Expr>> {
+    fn term(&mut self) -> Parsed<Box<Expr>> {
         trace!("Entered term");
 
-        if let Some(term) = self.factor() {
+        if let Parsed::Some(term) = self.factor() {
             let operator = match self.peek(1) {
                 Some(&[Token::Plus]) => ArithmeticOp::Add,
                 Some(&[Token::Minus]) => ArithmeticOp::Sub,
-                _ => return Some(term),
+                _ => return Parsed::Some(term),
             };
 
             // And the operator
             self.next_token();
 
-            Some(Box::new(Expr::ArithmeticExpr {
+            Parsed::Some(Box::new(Expr::ArithmeticExpr {
                 lhs: term,
                 rhs: match self.term() {
-                    Some(expr) => expr,
-                    None => return None,
+                    Parsed::Some(expr) => expr,
+                    Parsed::None => return Parsed::None,
+                    Parsed::Err(e) => return Parsed::Err(e),
                 },
                 operator,
             }))
         } else {
-            None
+            Parsed::None
         }
 
     }
 
-    fn factor(&mut self) -> Option<Box<Expr>> {
+    fn factor(&mut self) -> Parsed<Box<Expr>> {
         trace!("Entered factor");
 
-        if let Some(factor) = self.atom() {
+        if let Parsed::Some(factor) = self.atom() {
             let operator = match self.peek(1) {
                 Some(&[Token::Asterisk]) => ArithmeticOp::Mult,
                 Some(&[Token::Slash]) => ArithmeticOp::Div,
                 Some(&[Token::Percent]) => ArithmeticOp::Mod,
-                _ => return Some(factor),
+                _ => return Parsed::Some(factor),
             };
 
             // And the operator
             self.next_token();
 
-            Some(Box::new(Expr::ArithmeticExpr {
+            Parsed::Some(Box::new(Expr::ArithmeticExpr {
                 lhs: factor,
                 rhs: match self.factor() {
-                    Some(expr) => expr,
-                    None => return None,
+                    Parsed::Some(expr) => expr,
+                    Parsed::None => return Parsed::None,
+                    Parsed::Err(e) => return Parsed::Err(e),
                 },
                 operator,
             }))
         } else {
-            None
+            Parsed::None
         }
 
 
     }
 
-    fn atom(&mut self) -> Option<Box<Expr>> {
+    fn atom(&mut self) -> Parsed<Box<Expr>> {
         trace!("Entered atom");
+
+        if let Parsed::Some(function_call) = self.function_call() {
+            return Parsed::Some(function_call);
+        }
 
         match self.next_token() {
             Token::OpenParen => {
-                let expr = self.expression();
+                let expr = match self.expression() {
+                    Parsed::Some(expr) => expr,
+                    Parsed::None => {
+                        return Parsed::Err(
+                            format!("Expected expression, found {:?}", self.tokens[self.pos])
+                                .into(),
+                        )
+                    }
+                    Parsed::Err(e) => return Parsed::Err(e),
+                };
                 match self.next_token() {
-                    Token::CloseParen => expr,
-                    _ => None,
+                    Token::CloseParen => Parsed::Some(expr),
+                    other => Parsed::Err(format!("Expected ')', found '{:?}'", other).into()),
                 }
             }
-            Token::Ident(name) => Some(Box::new(Expr::Ident(name))),
-            Token::Integer(value) => Some(Box::new(Expr::Value(ValueType::Int32(value)))),
-            Token::Float(value) => Some(Box::new(Expr::Value(ValueType::Float32(value)))),
-            Token::Bool(value) => Some(Box::new(Expr::Value(ValueType::Bool(value)))),
-            Token::String(value) => Some(Box::new(Expr::Value(ValueType::String(value)))),
-            _ => None,
+            Token::Ident(name) => Parsed::Some(Box::new(Expr::Ident(name))),
+            Token::Integer(value) => Parsed::Some(Box::new(Expr::Value(ValueType::Int32(value)))),
+            Token::Float(value) => Parsed::Some(Box::new(Expr::Value(ValueType::Float32(value)))),
+            Token::Bool(value) => Parsed::Some(Box::new(Expr::Value(ValueType::Bool(value)))),
+            Token::String(value) => Parsed::Some(Box::new(Expr::Value(ValueType::String(value)))),
+            _ => Parsed::None,
         }
+    }
+
+    fn function_call(&mut self) -> Parsed<Box<Expr>> {
+        trace!("Entered function_call");
+
+        match self.peek(2) {
+            Some(&[Token::Ident(_), Token::OpenParen]) => {}
+            _ => return Parsed::None,
+        }
+
+        let ident = match self.next_token() {
+            Token::Ident(ident) => ident,
+            _ => unreachable!(),
+        };
+
+        self.next_token(); // Remove the opening paren
+
+        let args = match self.parameter_list() {
+            Parsed::Some(params) => params,
+            Parsed::None => return Parsed::None,
+            Parsed::Err(e) => return Parsed::Err(e),
+        };
+
+        self.next_token(); // Remove closing paren
+
+        Parsed::Some(Box::new(Expr::FunctionCall(ident, args)))
     }
 }

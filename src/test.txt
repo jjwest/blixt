@@ -1,1 +1,2 @@
-2 * (2+ 3 - 1) / 4
+result := 15 - 2 * (3 + 1)
+second := result

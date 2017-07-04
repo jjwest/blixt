@@ -1,28 +1,50 @@
+use std::collections::HashMap;
 use std::fmt;
 
 use errors::*;
 
 #[derive(Debug)]
+pub struct Ast {
+    statements: StmtList,
+    functions: HashMap<String, Function>,
+    scope: Scope,
+}
+
+impl Ast {
+    pub fn new() -> Ast {
+        Ast {
+            statements: StmtList::new(),
+            functions: HashMap::new(),
+            scope: Scope::new(true),
+        }
+    }
+
+    pub fn add_stmt(&mut self, stmt: Stmt) {
+        self.statements.add_stmt(stmt);
+    }
+
+    pub fn eval(mut self) -> Result<ValueType> {
+        self.statements.eval(&mut self.scope)
+    }
+}
+
+#[derive(Debug)]
 pub struct StmtList {
     statements: Vec<Stmt>,
-    scope: Scope,
 }
 
 impl StmtList {
     pub fn new() -> Self {
-        StmtList {
-            statements: Vec::new(),
-            scope: Scope::new(),
-        }
+        StmtList { statements: Vec::new() }
     }
 
     pub fn add_stmt(&mut self, stmt: Stmt) {
         self.statements.push(stmt);
     }
 
-    pub fn eval(mut self) -> Result<ValueType> {
+    pub fn eval(self, mut scope: &mut Scope) -> Result<ValueType> {
         for stmt in self.statements {
-            println!("{}", stmt.eval(&mut self.scope)?);
+            stmt.eval(&mut scope)?;
         }
         Ok(ValueType::Nil)
     }
@@ -45,7 +67,7 @@ impl Stmt {
                 Ok(ValueType::Nil)
             }
             Stmt::Expr(expr) => expr.eval(scope),
-            Stmt::StmtList(list) => list.eval(),
+            Stmt::StmtList(list) => list.eval(scope),
             Stmt::Return(value) => Ok(value),
         }
     }
@@ -84,7 +106,7 @@ pub enum Expr {
         rhs: Box<Expr>,
     },
     Ident(String),
-    FunctionCall(String),
+    FunctionCall(String, ParameterList),
     Value(ValueType),
 }
 
@@ -110,6 +132,111 @@ impl Expr {
             _ => unimplemented!(),
         }
     }
+}
+
+#[derive(Debug)]
+pub struct Variable {
+    defined_in_scope_level: u32,
+    name: String,
+    value: ValueType,
+}
+
+#[derive(Debug)]
+pub struct Function {
+    name: String,
+    body: StmtList,
+    scope: Scope,
+}
+
+impl Function {
+    pub fn new(name: String, body: StmtList) -> Self {
+        Function {
+            name,
+            body,
+            scope: Scope::new(false),
+        }
+    }
+
+    pub fn eval(mut self) -> Result<ValueType> {
+        self.body.eval(&mut self.scope)
+    }
+}
+
+#[derive(Debug)]
+pub struct Scope {
+    statements: Vec<Stmt>,
+    variables: Vec<Variable>,
+    current_scope_level: u32,
+    global: bool,
+}
+
+impl Scope {
+    fn new(global: bool) -> Self {
+        Scope {
+            statements: Vec::new(),
+            variables: Vec::new(),
+            current_scope_level: 0,
+            global,
+        }
+    }
+
+    fn get_variable(&self, variable: &str) -> Option<&ValueType> {
+        for var in &self.variables {
+            if var.name == variable {
+                return Some(&var.value);
+            }
+        }
+        None
+    }
+
+    fn set_variable(&mut self, name: String, value: ValueType) {
+        if let Some(pos) = self.variables.iter().position(|var| var.name == name) {
+            self.variables[pos].value = value;
+        } else {
+            self.variables.push(Variable {
+                defined_in_scope_level: self.current_scope_level,
+                name,
+                value,
+            });
+        }
+    }
+
+    fn push_scope_level(&mut self) {
+        self.current_scope_level += 1;
+    }
+
+    fn pop_scope_level(&mut self) {
+        assert!(self.current_scope_level > 0);
+
+        let current_scope = self.current_scope_level;
+        self.variables.retain(|var| {
+            var.defined_in_scope_level != current_scope
+        });
+        self.current_scope_level -= 1;
+    }
+}
+
+#[derive(Debug)]
+pub enum ArithmeticOp {
+    Add,
+    Sub,
+    Div,
+    Mult,
+    Mod,
+}
+
+#[derive(Debug)]
+pub enum LogicOp {
+    Lesser,
+    Greater,
+    Equal,
+    LesserEqual,
+    GreaterEqual,
+}
+
+#[derive(Debug)]
+pub enum UnaryOp {
+    Not,
 }
 
 #[derive(Clone, Debug)]
@@ -238,86 +365,4 @@ impl ::std::ops::Rem for ValueType {
             _ => Err("Cannot modulo with nil".into()),
         }
     }
-}
-
-#[derive(Debug)]
-struct Variable {
-    defined_in_scope_level: u32,
-    name: String,
-    value: ValueType,
-}
-
-#[derive(Debug)]
-pub struct Scope {
-    statements: Vec<Stmt>,
-    variables: Vec<Variable>,
-    current_scope_level: u32,
-}
-
-impl Scope {
-    fn new() -> Self {
-        Scope {
-            statements: Vec::new(),
-            variables: Vec::new(),
-            current_scope_level: 0,
-        }
-    }
-
-    fn get_variable(&self, variable: &str) -> Option<&ValueType> {
-        for var in &self.variables {
-            if var.name == variable {
-                return Some(&var.value);
-            }
-        }
-        None
-    }
-
-    fn set_variable(&mut self, name: String, value: ValueType) {
-        if let Some(pos) = self.variables.iter().position(|var| var.name == name) {
-            self.variables[pos].value = value;
-        } else {
-            self.variables.push(Variable {
-                defined_in_scope_level: self.current_scope_level,
-                name,
-                value,
-            });
-        }
-    }
-
-    fn push_scope_level(&mut self) {
-        self.current_scope_level += 1;
-    }
-
-    fn pop_scope_level(&mut self) {
-        assert!(self.current_scope_level > 0);
-
-        let current_scope = self.current_scope_level;
-        self.variables.retain(|var| {
-            var.defined_in_scope_level != current_scope
-        });
-        self.current_scope_level -= 1;
-    }
-}
-
-#[derive(Debug)]
-pub enum ArithmeticOp {
-    Add,
-    Sub,
-    Div,
-    Mult,
-    Mod,
-}
-
-#[derive(Debug)]
-pub enum LogicOp {
-    Lesser,
-    Greater,
-    Equal,
-    LesserEqual,
-    GreaterEqual,
-}
-
-#[derive(Debug)]
-pub enum UnaryOp {
-    Not,
 }

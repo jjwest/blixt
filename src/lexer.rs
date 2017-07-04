@@ -54,6 +54,7 @@ pub enum Token {
     Return,
     While,
     Print,
+    FunctionDeclaration,
 
     Comment,
     Eof,
@@ -172,6 +173,7 @@ named!(keyword<Token>,
                              | tag!("else if")
                              | tag!("else")
                              | tag!("for")
+                             | tag!("fn")
                              | tag!("print")
                              | tag!("while"))),
                     str::from_utf8
@@ -181,7 +183,7 @@ named!(keyword<Token>,
                "else if" => Token::ElseIf,
                "else" => Token::Else,
                "for" => Token::For,
-               "print" => Token::Print,
+               "fn" => Token::FunctionDeclaration,
                "while" => Token::While,
                _ => unreachable!(),
            }
