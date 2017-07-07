@@ -1,2 +1,1 @@
-result := 15 - 2 * (3 + 1)
-second := result
+2 * (2+ 3 - 1) / 4
