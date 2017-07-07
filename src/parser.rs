@@ -10,6 +10,7 @@ pub struct Parser {
     pos: usize,
 }
 
+
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Parser {
@@ -23,7 +24,7 @@ impl Parser {
         let mut syntax_tree = StmtList::new();
 
         while self.pos < self.tokens.len() {
-            syntax_tree.add_stmt(match self.statement() {
+            syntax_tree.add_stmt(match self.statement()? {
                 Some(stmt) => stmt,
                 None => return Err("Error while parsing".into()),
             });
@@ -46,33 +47,33 @@ impl Parser {
         }
     }
 
-    fn statement(&mut self) -> Option<Stmt> {
+    fn statement(&mut self) -> Result<Option<Stmt>> {
         trace!("Entered statement");
 
-        if let Some(assignment) = self.assignment() {
+        if let Some(assignment) = self.assignment()? {
             debug!("assignment");
-            return Some(Stmt::Assignment(assignment));
+            return Ok(Some(Stmt::Assignment(assignment)));
         }
-        if let Some(expr) = self.expression() {
+        if let Some(expr) = self.expression()? {
             debug!("expression");
-            return Some(Stmt::Expr(*expr));
+            return Ok(Some(Stmt::Expr(*expr)));
         }
 
-        None
+        Ok(None)
     }
 
-    fn parameter_list(&mut self) -> Option<ParameterList> {
+    fn parameter_list(&mut self) -> Result<Option<ParameterList>> {
         let mut params = ParameterList::new();
         self.parameter(&mut params);
         if !params.is_empty() {
-            Some(params)
+            Ok(Some(params))
         } else {
-            None
+            Ok(None)
         }
     }
 
     fn parameter(&mut self, list: &mut ParameterList) {
-        if let Some(expr) = self.expression() {
+        if let Ok(Some(expr)) = self.expression() {
             list.push(*expr);
             if self.tokens[0] == Token::Comma {
                 self.next_token();
@@ -82,134 +83,151 @@ impl Parser {
     }
 
 
-    fn assignment(&mut self) -> Option<Assignment> {
+    fn assignment(&mut self) -> Result<Option<Assignment>> {
         trace!("Entered assignment");
 
         match self.peek(2) {
             Some(&[Token::Ident(_), Token::Assign]) => {}
-            _ => return None,
+            _ => return Ok(None),
         };
 
         let ident = match self.next_token() {
             Token::Ident(ident) => ident,
-            _ => return None,
+            _ => return Err("Expected expression".into()),
         };
 
-        // And the assign token
-        self.next_token();
-
-        let expr = self.expression().expect("Expected expr");
+        let expr = self.expression()?.expect("Expected expr");
         let assignment = Assignment::new(ident, *expr);
-        Some(assignment)
+        Ok(Some(assignment))
     }
 
-    fn expression(&mut self) -> Option<Box<Expr>> {
+    fn expression(&mut self) -> Result<Option<Box<Expr>>> {
         trace!("Entered expression");
         self.logical_expression()
     }
 
-    fn logical_expression(&mut self) -> Option<Box<Expr>> {
+    fn logical_expression(&mut self) -> Result<Option<Box<Expr>>> {
         trace!("Entered logical_expression");
 
-        if let Some(term) = self.term() {
+        if let Some(term) = self.term()? {
             let operator = match self.peek(1) {
                 Some(&[Token::Lesser]) => LogicOp::Lesser,
                 Some(&[Token::Greater]) => LogicOp::Greater,
                 Some(&[Token::GreaterEqual]) => LogicOp::GreaterEqual,
                 Some(&[Token::LesserEqual]) => LogicOp::LesserEqual,
                 Some(&[Token::Equal]) => LogicOp::Equal,
-                _ => return Some(term),
+                _ => return Ok(Some(term)),
             };
 
             // And the operator
             self.next_token();
 
-            Some(Box::new(Expr::LogicalExpr {
+            Ok(Some(Box::new(Expr::LogicalExpr {
                 lhs: term,
-                rhs: match self.expression() {
+                rhs: match self.expression()? {
                     Some(expr) => expr,
-                    None => return None,
+                    None => {
+                        return Err(
+                            format!("Expected expression, found '{:?}'", self.tokens[self.pos])
+                                .into(),
+                        )
+                    }
                 },
                 operator,
-            }))
+            })))
         } else {
-            None
+            Ok(None)
         }
     }
 
-    fn term(&mut self) -> Option<Box<Expr>> {
+    fn term(&mut self) -> Result<Option<Box<Expr>>> {
         trace!("Entered term");
 
-        if let Some(term) = self.factor() {
+        if let Some(term) = self.factor()? {
             let operator = match self.peek(1) {
                 Some(&[Token::Plus]) => ArithmeticOp::Add,
                 Some(&[Token::Minus]) => ArithmeticOp::Sub,
-                _ => return Some(term),
+                _ => return Ok(Some(term)),
             };
 
             // And the operator
             self.next_token();
 
-            Some(Box::new(Expr::ArithmeticExpr {
+            Ok(Some(Box::new(Expr::ArithmeticExpr {
                 lhs: term,
-                rhs: match self.term() {
+                rhs: match self.term()? {
                     Some(expr) => expr,
-                    None => return None,
+                    None => {
+                        return Err(
+                            format!("Expected expression, found '{:?}'", self.tokens[self.pos])
+                                .into(),
+                        )
+                    }
                 },
                 operator,
-            }))
+            })))
         } else {
-            None
+            Ok(None)
         }
 
     }
 
-    fn factor(&mut self) -> Option<Box<Expr>> {
+    fn factor(&mut self) -> Result<Option<Box<Expr>>> {
         trace!("Entered factor");
 
-        if let Some(factor) = self.atom() {
+        if let Some(factor) = self.atom()? {
             let operator = match self.peek(1) {
                 Some(&[Token::Asterisk]) => ArithmeticOp::Mult,
                 Some(&[Token::Slash]) => ArithmeticOp::Div,
                 Some(&[Token::Percent]) => ArithmeticOp::Mod,
-                _ => return Some(factor),
+                _ => return Ok(Some(factor)),
             };
 
             // And the operator
             self.next_token();
 
-            Some(Box::new(Expr::ArithmeticExpr {
+            Ok(Some(Box::new(Expr::ArithmeticExpr {
                 lhs: factor,
-                rhs: match self.factor() {
+                rhs: match self.factor()? {
                     Some(expr) => expr,
-                    None => return None,
+                    None => {
+                        return Err(
+                            format!("Expected expression, found '{:?}'", self.tokens[self.pos])
+                                .into(),
+                        )
+                    }
                 },
                 operator,
-            }))
+            })))
         } else {
-            None
+            Ok(None)
         }
 
 
     }
 
-    fn atom(&mut self) -> Option<Box<Expr>> {
+    fn atom(&mut self) -> Result<Option<Box<Expr>>> {
         trace!("Entered atom");
 
         match self.next_token() {
             Token::OpenParen => {
-                let expr = self.expression();
+                let expr = self.expression()?;
                 match self.next_token() {
-                    Token::CloseParen => expr,
-                    _ => None,
+                    Token::CloseParen => Ok(expr),
+                    _ => Err(
+                        format!("Expected ')', found '{:?}'", self.tokens[self.pos]).into(),
+                    ),
+
                 }
             }
-            Token::Ident(name) => Some(Box::new(Expr::Ident(name))),
-            Token::Integer(value) => Some(Box::new(Expr::Value(ValueType::Int32(value)))),
-            Token::Float(value) => Some(Box::new(Expr::Value(ValueType::Float32(value)))),
-            Token::Bool(value) => Some(Box::new(Expr::Value(ValueType::Bool(value)))),
-            Token::String(value) => Some(Box::new(Expr::Value(ValueType::String(value)))),
-            _ => None,
+            Token::Ident(name) => Ok(Some(Box::new(Expr::Ident(name)))),
+            Token::Integer(value) => Ok(Some(Box::new(Expr::Value(ValueType::Int32(value))))),
+            Token::Float(value) => Ok(Some(Box::new(Expr::Value(ValueType::Float32(value))))),
+            Token::Bool(value) => Ok(Some(Box::new(Expr::Value(ValueType::Bool(value))))),
+            Token::String(value) => Ok(Some(Box::new(Expr::Value(ValueType::String(value))))),
+            _ => Err(
+                format!("Expected an atom, found '{:?}'", self.tokens[self.pos]).into(),
+            ),
         }
     }
 }
