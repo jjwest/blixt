@@ -42,6 +42,9 @@ pub enum Token {
     CloseBracket,
     CloseParen,
     Comma,
+    SemiColon,
+    Colon,
+    ReturnDeclaration,
     OpenBrace,
     OpenBracket,
     OpenParen,
@@ -54,6 +57,7 @@ pub enum Token {
     Return,
     While,
     Print,
+    FunctionDeclaration,
 
     Comment,
     Eof,
@@ -112,6 +116,7 @@ named!(get_token<Token>,
        alt!(
            file_end
                | string
+               | assign_op
                | delimiter
                | keyword
                | boolean
@@ -119,7 +124,6 @@ named!(get_token<Token>,
                | comment
                | comp_op
                | logical_op
-               | assign_op
                | arith_op
                | floats
                | integer
@@ -127,7 +131,7 @@ named!(get_token<Token>,
 );
 
 named!(delimiter<Token>,
-       map!(ws!(one_of!("(){}[]")),
+       map!(ws!(one_of!("(){}[],:;")),
             |delim: char| match delim {
                 '{' => Token::OpenBrace,
                 '}' => Token::CloseBrace,
@@ -135,6 +139,9 @@ named!(delimiter<Token>,
                 ')' => Token::CloseParen,
                 '[' => Token::OpenBracket,
                 ']' => Token::CloseBracket,
+                ',' => Token::Comma,
+                ':' => Token::Colon,
+                ';' => Token::SemiColon,
                 _ => unreachable!(),
             }
        )
@@ -173,6 +180,7 @@ named!(keyword<Token>,
                              | tag!("else")
                              | tag!("for")
                              | tag!("print")
+                             | tag!("fn")
                              | tag!("while"))),
                     str::from_utf8
            ),
@@ -182,6 +190,7 @@ named!(keyword<Token>,
                "else" => Token::Else,
                "for" => Token::For,
                "print" => Token::Print,
+               "fn" => Token::FunctionDeclaration,
                "while" => Token::While,
                _ => unreachable!(),
            }
@@ -308,7 +317,7 @@ named!(floats<Token>,
 );
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
 
     #[test]
@@ -321,7 +330,7 @@ mod tests {
 
     #[test]
     fn test_parse_keyword() {
-        let source = b" if else if else for while";
+        let source = b" if else if else for while fn";
 
         let mut result = get_token(source);
         assert!(result.is_done());
@@ -345,9 +354,13 @@ mod tests {
 
         result = get_token(remaining);
         assert!(result.is_done());
-        let (_, token) = result.unwrap();
+        let (remaining, token) = result.unwrap();
         assert_eq!(Token::While, token);
 
+        result = get_token(remaining);
+        assert!(result.is_done());
+        let (_, token) = result.unwrap();
+        assert_eq!(Token::FunctionDeclaration, token);
     }
 
     #[test]
@@ -372,7 +385,7 @@ mod tests {
 
     #[test]
     fn test_parse_delimiter() {
-        let source = b" () [] {} ";
+        let source = b" () [] {} , : ;";
 
         let mut result = get_token(source);
         assert!(result.is_done());
@@ -401,8 +414,23 @@ mod tests {
 
         result = get_token(remaining);
         assert!(result.is_done());
-        let (_, token) = result.unwrap();
+        let (remaining, token) = result.unwrap();
         assert_eq!(Token::CloseBrace, token);
+
+        result = get_token(remaining);
+        assert!(result.is_done());
+        let (remaining, token) = result.unwrap();
+        assert_eq!(Token::Comma, token);
+
+        result = get_token(remaining);
+        assert!(result.is_done());
+        let (remaining, token) = result.unwrap();
+        assert_eq!(Token::Colon, token);
+
+        result = get_token(remaining);
+        assert!(result.is_done());
+        let (_, token) = result.unwrap();
+        assert_eq!(Token::SemiColon, token);
     }
 
     #[test]
@@ -461,7 +489,7 @@ mod tests {
         let result = get_token(source);
         assert!(result.is_done());
         let (_, token) = result.unwrap();
-        assert_eq!(Token::String("Hello friend".to_owned()) , token);
+        assert_eq!(Token::String("Hello friend".to_owned()), token);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 use std::mem;
 
-use ast::{Assignment, ArithmeticOp, Expr, LogicOp, ParameterList, Stmt, StmtList, ValueType};
+use ast::{Assignment, ArithmeticOp, Expr, Function, LogicOp, ParameterList, Stmt, StmtList,
+          ValueType};
 use errors::*;
 use lexer::Token;
 
@@ -10,6 +11,14 @@ pub struct Parser {
     pos: usize,
 }
 
+macro_rules! expect_next {
+    ( $context:ident, $func:ident, $expected:expr ) => {
+        match $context.$func() {
+            $expected => {},
+            other => return Err(format!("Expected '{:?}', found '{:?}'", $expected, other).into()),
+        }
+    }
+}
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
@@ -33,6 +42,10 @@ impl Parser {
     }
 
     fn next_token(&mut self) -> Token {
+        if self.pos >= self.tokens.len() {
+            panic!("Called next_token when no tokens are left")
+        }
+
         let token = mem::replace(&mut self.tokens[self.pos], Token::Consumed);
         debug!("Consumed {:?}", token);
         self.pos += 1;
@@ -47,8 +60,27 @@ impl Parser {
         }
     }
 
+    fn statement_list(&mut self) -> Result<Option<StmtList>> {
+        let mut stmt_list = StmtList::new();
+        while let Some(stmt) = self.statement()? {
+            stmt_list.add_stmt(stmt);
+        }
+
+        Ok(Some(stmt_list))
+    }
+
     fn statement(&mut self) -> Result<Option<Stmt>> {
         trace!("Entered statement");
+
+        if let Some(function) = self.function_declaration()? {
+            debug!("function_declaration");
+            return Ok(Some(Stmt::Function(function)));
+        }
+
+        if let Some(params) = self.parameter_list()? {
+            debug!("parameterlist");
+            return Ok(Some(Stmt::ParameterList(params)));
+        }
 
         if let Some(assignment) = self.assignment()? {
             debug!("assignment");
@@ -62,43 +94,78 @@ impl Parser {
         Ok(None)
     }
 
-    fn parameter_list(&mut self) -> Result<Option<ParameterList>> {
-        let mut params = ParameterList::new();
-        self.parameter(&mut params);
-        if !params.is_empty() {
-            Ok(Some(params))
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn parameter(&mut self, list: &mut ParameterList) {
-        if let Ok(Some(expr)) = self.expression() {
-            list.push(*expr);
-            if self.tokens[0] == Token::Comma {
-                self.next_token();
-                self.parameter(list);
-            }
-        }
-    }
-
-
     fn assignment(&mut self) -> Result<Option<Assignment>> {
         trace!("Entered assignment");
 
         match self.peek(2) {
             Some(&[Token::Ident(_), Token::Assign]) => {}
             _ => return Ok(None),
-        };
+        }
 
         let ident = match self.next_token() {
             Token::Ident(ident) => ident,
-            _ => return Err("Expected expression".into()),
+            other => return Err(format!("Expected identifier, found '{:?}'", other).into()),
         };
 
-        let expr = self.expression()?.expect("Expected expr");
-        let assignment = Assignment::new(ident, *expr);
-        Ok(Some(assignment))
+        expect_next!(self, next_token, Token::Assign);
+
+        let value = match self.expression()? {
+            Some(expr) => *expr,
+            None => {
+                return Err(
+                    format!("Expected expression, found '{:?}'", self.next_token()).into(),
+                )
+            }
+        };
+
+        Ok(Some(Assignment::new(ident, value)))
+    }
+
+    fn parameter_list(&mut self) -> Result<Option<ParameterList>> {
+        trace!("Entered parameter_list");
+
+        let mut params = ParameterList::new();
+        loop {
+            match self.expression()? {
+                Some(expr) => {
+                    params.push(*expr);
+                    if self.peek(1) == Some(&[Token::Comma]) {
+                        self.next_token();
+                    } else {
+                        return Ok(Some(params));
+                    }
+                }
+                None => return Ok(Some(params)),
+            }
+        }
+    }
+
+    fn function_declaration(&mut self) -> Result<Option<Function>> {
+        trace!("Entered function_declaration");
+
+        match self.peek(1) {
+            Some(&[Token::FunctionDeclaration]) => {}
+            _ => return Ok(None),
+        }
+
+        expect_next!(self, next_token, Token::FunctionDeclaration);
+
+        let ident = match self.next_token() {
+            Token::Ident(ident) => ident,
+            other => return Err(format!("Expected identifier, found '{:?}'", other).into()),
+        };
+
+        expect_next!(self, next_token, Token::OpenParen);
+
+        let params = self.parameter_list()?.expect("Expected params");
+
+        expect_next!(self, next_token, Token::CloseParen);
+        expect_next!(self, next_token, Token::OpenBrace);
+
+        let body = self.statement_list()?.expect("Expected function body");
+
+        expect_next!(self, next_token, Token::CloseBrace);
+        Ok(Some(Function::new(ident, body, params)))
     }
 
     fn expression(&mut self) -> Result<Option<Box<Expr>>> {
@@ -128,7 +195,7 @@ impl Parser {
                     Some(expr) => expr,
                     None => {
                         return Err(
-                            format!("Expected expression, found '{:?}'", self.tokens[self.pos])
+                            format!("Expected expression, found '{:?}'", self.next_token())
                                 .into(),
                         )
                     }
@@ -159,7 +226,7 @@ impl Parser {
                     Some(expr) => expr,
                     None => {
                         return Err(
-                            format!("Expected expression, found '{:?}'", self.tokens[self.pos])
+                            format!("Expected expression, found '{:?}'", self.next_token())
                                 .into(),
                         )
                     }
@@ -192,7 +259,7 @@ impl Parser {
                     Some(expr) => expr,
                     None => {
                         return Err(
-                            format!("Expected expression, found '{:?}'", self.tokens[self.pos])
+                            format!("Expected expression, found '{:?}'", self.next_token())
                                 .into(),
                         )
                     }
@@ -214,9 +281,7 @@ impl Parser {
                 let expr = self.expression()?;
                 match self.next_token() {
                     Token::CloseParen => Ok(expr),
-                    _ => Err(
-                        format!("Expected ')', found '{:?}'", self.tokens[self.pos]).into(),
-                    ),
+                    token => Err(format!("Expected ')', found '{:?}'", token).into()),
 
                 }
             }
@@ -225,9 +290,7 @@ impl Parser {
             Token::Float(value) => Ok(Some(Box::new(Expr::Value(ValueType::Float32(value))))),
             Token::Bool(value) => Ok(Some(Box::new(Expr::Value(ValueType::Bool(value))))),
             Token::String(value) => Ok(Some(Box::new(Expr::Value(ValueType::String(value))))),
-            _ => Err(
-                format!("Expected an atom, found '{:?}'", self.tokens[self.pos]).into(),
-            ),
+            other => Err(format!("Expected an atom, found '{:?}'", other).into()),
         }
     }
 }

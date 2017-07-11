@@ -1,1 +1,3 @@
-2 * (2+ 3 - 1) / 4
+fn hello(name: string, age: int) -> int {
+   name := "Jonas"
+}

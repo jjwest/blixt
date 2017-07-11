@@ -34,6 +34,8 @@ pub enum Stmt {
     Expr(Expr),
     StmtList(StmtList),
     Return(ValueType),
+    ParameterList(ParameterList),
+    Function(Function),
 }
 
 impl Stmt {
@@ -47,11 +49,37 @@ impl Stmt {
             Stmt::Expr(expr) => expr.eval(scope),
             Stmt::StmtList(list) => list.eval(),
             Stmt::Return(value) => Ok(value),
+            Stmt::ParameterList(params) => {
+                println!("Params: {:?}", params);
+                Ok(ValueType::Nil)
+            }
+            Stmt::Function(_function) => {
+                info!("Function!");
+                Ok(ValueType::Nil)
+            }
         }
     }
 }
 
 pub type ParameterList = Vec<Expr>;
+
+#[derive(Debug)]
+pub struct Function {
+    name: String,
+    body: StmtList,
+    params: ParameterList,
+}
+
+impl Function {
+    pub fn new(name: String, body: StmtList, params: ParameterList) -> Self {
+        Function { name, body, params }
+    }
+
+    pub fn eval(self) -> ValueType {
+        info!("Evaluating function");
+        ValueType::Nil
+    }
+}
 
 #[derive(Debug)]
 pub struct Assignment {
@@ -264,7 +292,7 @@ impl Scope {
     }
 
     fn get_variable(&self, variable: &str) -> Option<&ValueType> {
-        for var in &self.variables {
+        for var in self.variables.iter().rev() {
             if var.name == variable {
                 return Some(&var.value);
             }
@@ -273,7 +301,7 @@ impl Scope {
     }
 
     fn set_variable(&mut self, name: String, value: ValueType) {
-        if let Some(pos) = self.variables.iter().position(|var| var.name == name) {
+        if let Some(pos) = self.variables.iter().rev().position(|var| var.name == name) {
             self.variables[pos].value = value;
         } else {
             self.variables.push(Variable {
