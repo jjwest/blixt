@@ -67,6 +67,12 @@ pub enum Token {
     Float(f32),
     String(String),
 
+    // Types
+    BoolType,
+    FloatType,
+    IntType,
+    StringType,
+
     Consumed,
 }
 
@@ -119,7 +125,9 @@ named!(get_token<Token>,
                | assign_op
                | delimiter
                | keyword
+               | sigils
                | boolean
+               | types
                | ident
                | comment
                | comp_op
@@ -144,6 +152,13 @@ named!(delimiter<Token>,
                 ';' => Token::SemiColon,
                 _ => unreachable!(),
             }
+       )
+);
+
+named!(sigils<Token>,
+       do_parse!(
+           ws!(tag!("->")) >>
+           (Token::ReturnDeclaration)
        )
 );
 
@@ -204,6 +219,24 @@ named!(boolean<Token>,
            |token: &str| match token {
                "true" => Token::Bool(true),
                "false" => Token::Bool(false),
+               _ => unreachable!(),
+           }
+       )
+);
+
+named!(types<Token>,
+       map!(
+           map_res!(ws!(alt!(tag!("string")
+                             | tag!("int")
+                             | tag!("float")
+                             | tag!("bool"))),
+                    str::from_utf8
+           ),
+           |word: &str| match word {
+               "string" => Token::StringType,
+               "int" => Token::IntType,
+               "float" => Token::FloatType,
+               "bool" => Token::BoolType,
                _ => unreachable!(),
            }
        )
@@ -329,6 +362,14 @@ mod test {
     }
 
     #[test]
+    fn test_parse_sigils() {
+        let source = b" -> ";
+        let result = get_token(source);
+        assert!(result.is_done());
+        assert_eq!(Token::ReturnDeclaration, result.unwrap().1);
+    }
+
+    #[test]
     fn test_parse_keyword() {
         let source = b" if else if else for while fn";
 
@@ -381,6 +422,32 @@ mod test {
         assert!(result.is_done());
         let (_, token) = result.unwrap();
         assert_eq!(Token::Not, token);
+    }
+
+    #[test]
+    fn test_parse_types() {
+        let source = b" string int float bool ";
+
+        let mut result = get_token(source);
+        assert!(result.is_done());
+        let (remaining, token) = result.unwrap();
+        assert_eq!(Token::StringType, token);
+
+        result = get_token(remaining);
+        assert!(result.is_done());
+        let (remaining, token) = result.unwrap();
+        assert_eq!(Token::IntType, token);
+
+        result = get_token(remaining);
+        assert!(result.is_done());
+        let (remaining, token) = result.unwrap();
+        assert_eq!(Token::FloatType, token);
+
+        result = get_token(remaining);
+        assert!(result.is_done());
+        let (_, token) = result.unwrap();
+        assert_eq!(Token::BoolType, token);
+
     }
 
     #[test]
