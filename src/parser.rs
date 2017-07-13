@@ -1,7 +1,7 @@
 use std::mem;
 
-use ast::{Assignment, ArithmeticOp, Expr, Function, LogicOp, ParameterList, Stmt, StmtList, Value,
-          ValueType};
+use ast::{Assignment, ArithmeticOp, Expr, Function, LogicOp, Parameter, ParameterList, Stmt,
+          StmtList, Value, ValueType};
 use errors::*;
 use lexer::Token;
 
@@ -63,7 +63,7 @@ impl Parser {
     }
 
     fn peek(&mut self, len: usize) -> Option<&[Token]> {
-        if self.pos + len < self.tokens.len() {
+        if self.pos + len <= self.tokens.len() {
             Some(&self.tokens[self.pos..self.pos + len])
         } else {
             None
@@ -83,16 +83,13 @@ impl Parser {
         trace!("Entered statement");
 
         if let Some(function) = self.function_declaration()? {
-            debug!("function_declaration");
             return Ok(Some(Stmt::Function(function)));
         }
 
         if let Some(assignment) = self.assignment()? {
-            debug!("assignment");
             return Ok(Some(Stmt::Assignment(assignment)));
         }
         if let Some(expr) = self.expression()? {
-            debug!("expression");
             return Ok(Some(Stmt::Expr(*expr)));
         }
 
@@ -163,6 +160,11 @@ impl Parser {
 
         let mut params = ParameterList::new();
         loop {
+            match self.peek(1) {
+                Some(&[Token::Ident(_)]) => {}
+                _ => return Ok(Some(params)),
+            }
+
             let ident = match self.next_token() {
                 Token::Ident(ident) => ident,
                 other => expected!("identifier", other),
@@ -175,8 +177,14 @@ impl Parser {
                 Token::FloatType => ValueType::Float,
                 Token::IntType => ValueType::Int,
                 Token::StringType => ValueType::String,
-                other => expected!("Identifier", other),
+                other => expected!("type", other),
             };
+
+            if let Some(&[Token::Comma]) = self.peek(1) {
+                self.next_token();
+            }
+
+            params.push(Parameter::new(ident, type_));
         }
     }
 
@@ -196,21 +204,39 @@ impl Parser {
         };
 
         expect_next!(self, next_token, Token::OpenParen);
-
         let params = self.parameter_list()?.expect("Expected params");
-
         expect_next!(self, next_token, Token::CloseParen);
+
+        let return_type = if let Some(&[Token::ReturnDeclaration]) = self.peek(1) {
+            self.next_token();
+            let type_ = match self.next_token() {
+                Token::BoolType => ValueType::Bool,
+                Token::FloatType => ValueType::Float,
+                Token::IntType => ValueType::Int,
+                Token::StringType => ValueType::String,
+                other => expected!("Value type", other),
+            };
+            Some(type_)
+        } else {
+            None
+        };
+
         expect_next!(self, next_token, Token::OpenBrace);
 
         let body = self.statement_list()?.expect("Expected function body");
 
         expect_next!(self, next_token, Token::CloseBrace);
-        Ok(Some(Function::new(ident, body, params)))
+
+        let function = Function::new(ident, body, params, return_type);
+        debug!("Function: {:#?}", function);
+        Ok(Some(function))
     }
 
     fn expression(&mut self) -> Result<Option<Box<Expr>>> {
         trace!("Entered expression");
-        self.logical_expression()
+        let expr = self.logical_expression();
+        debug!("Expr: {:?}", expr);
+        expr
     }
 
     fn logical_expression(&mut self) -> Result<Option<Box<Expr>>> {
@@ -316,6 +342,12 @@ impl Parser {
     fn atom(&mut self) -> Result<Option<Box<Expr>>> {
         trace!("Entered atom");
 
+        debug!("NEXT: {:?}", self.peek(1));
+        if let Some(&[Token::CloseBrace]) = self.peek(1) {
+            info!("CLOSE BRACE");
+            return Ok(None);
+        }
+
         match self.next_token() {
             Token::OpenParen => {
                 let expr = self.expression()?;
@@ -330,7 +362,7 @@ impl Parser {
             Token::Float(value) => Ok(Some(Box::new(Expr::Value(Value::Float32(value))))),
             Token::Bool(value) => Ok(Some(Box::new(Expr::Value(Value::Bool(value))))),
             Token::String(value) => Ok(Some(Box::new(Expr::Value(Value::String(value))))),
-            other => Err(format!("Expected an atom, found '{:?}'", other).into()),
+            _ => Ok(None),
         }
     }
 }

@@ -57,18 +57,42 @@ impl Stmt {
     }
 }
 
-pub type ParameterList = Vec<Expr>;
+
+#[derive(Debug)]
+pub struct Parameter {
+    name: String,
+    type_: ValueType,
+}
+
+impl Parameter {
+    pub fn new(name: String, type_: ValueType) -> Self {
+        Self { name, type_ }
+    }
+}
+
+pub type ParameterList = Vec<Parameter>;
 
 #[derive(Debug)]
 pub struct Function {
     name: String,
     body: StmtList,
     params: ParameterList,
+    return_type: Option<ValueType>,
 }
 
 impl Function {
-    pub fn new(name: String, body: StmtList, params: ParameterList) -> Self {
-        Function { name, body, params }
+    pub fn new(
+        name: String,
+        body: StmtList,
+        params: ParameterList,
+        return_type: Option<ValueType>,
+    ) -> Self {
+        Function {
+            name,
+            body,
+            params,
+            return_type,
+        }
     }
 
     pub fn eval(self) -> Value {
@@ -278,7 +302,7 @@ pub enum ValueType {
 }
 
 #[derive(Debug)]
-struct Variable {
+pub struct Variable {
     defined_in_scope_level: u32,
     name: String,
     type_: ValueType,

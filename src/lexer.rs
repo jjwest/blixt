@@ -123,6 +123,7 @@ named!(get_token<Token>,
        alt!(
            file_end
                | string
+               | comp_op
                | assign_op
                | delimiter
                | keyword
@@ -131,7 +132,6 @@ named!(get_token<Token>,
                | types
                | ident
                | comment
-               | comp_op
                | logical_op
                | arith_op
                | floats
@@ -576,7 +576,7 @@ mod test {
         let result = get_token(source);
         assert!(result.is_done());
         let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Assign, token);
+        assert_eq!(Token::Initialize, token);
 
         let result = get_token(remaining);
         assert!(result.is_done());
