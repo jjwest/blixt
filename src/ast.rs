@@ -2,14 +2,14 @@ use builtins::{Value, ValueKind};
 use errors::*;
 
 #[derive(Debug)]
-pub struct Ast {
+pub struct AbstractSyntaxTree {
     global_scope: Scope,
     statements: StmtList,
 }
 
-impl Ast {
-    pub fn new() -> Ast {
-        Ast {
+impl AbstractSyntaxTree {
+    pub fn new() -> AbstractSyntaxTree {
+        AbstractSyntaxTree {
             global_scope: Scope::new(),
             statements: StmtList::new(),
         }

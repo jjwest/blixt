@@ -20,6 +20,8 @@ mod ast;
 mod builtins;
 mod errors;
 mod lexer;
+#[macro_use]
+mod macros;
 mod parser;
 
 use errors::*;

@@ -1,29 +1,10 @@
 use std::mem;
 
-use ast::{Ast, Assignment, ArithmeticOp, Expr, Function, LogicOp, Parameter, ParameterList, Stmt,
-          StmtList};
+use ast::{AbstractSyntaxTree, Assignment, ArithmeticOp, Expr, Function, LogicOp, Parameter,
+          ParameterList, Stmt, StmtList};
 use builtins::{Value, ValueKind};
 use errors::*;
 use lexer::Token;
-
-macro_rules! expect_next {
-    ( $context:ident, $func:ident, $expected:expr ) => {
-        match $context.$func() {
-            $expected => {},
-            other => return Err(format!("Expected '{:?}', found '{:?}'", $expected, other).into()),
-        }
-    }
-}
-
-macro_rules! expected {
-    ( $expected:expr, $got:expr ) => {
-        return Err(format!("Expected '{:?}', found '{:?}'", $expected, $got).into())
-    };
-
-    ( $expected:expr ) => {
-        return Err(format!("Expected '{:?}'", $expected).into())
-    }
-}
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -40,8 +21,8 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self) -> Result<Ast> {
-        let mut syntax_tree = Ast::new();
+    pub fn parse(&mut self) -> Result<AbstractSyntaxTree> {
+        let mut syntax_tree = AbstractSyntaxTree::new();
 
         while self.pos < self.tokens.len() {
             syntax_tree.add_stmt(match self.statement()? {
