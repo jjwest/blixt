@@ -1,3 +1,7 @@
+name: string = "Jonas"
+age := 27
+height := 125.3
+
 fn hello(name: string, age: int) -> int {
    name := "Jonas"
 }

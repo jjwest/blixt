@@ -24,6 +24,7 @@ pub enum Token {
     NotEqual,
 
     // Assign operators
+    Initialize,
     Assign,
     AddAssign,
     DivAssign,
@@ -301,15 +302,16 @@ named!(string<Token>,
 named!(assign_op<Token>,
        map!(
            map_res!(
-               ws!(alt!(tag!(":=") | tag!("+=") | tag!("-=") | tag!("*=") | tag!("/="))),
+               ws!(alt!(tag!(":=") | tag!("+=") | tag!("-=") | tag!("*=") | tag!("/=") | tag!("="))),
                str::from_utf8
            ),
            |op: &str| match op {
-               ":=" => Token::Assign,
+               ":=" => Token::Initialize,
                "+=" => Token::AddAssign,
                "-=" => Token::SubAssign,
                "*=" => Token::MultAssign,
                "/=" => Token::DivAssign,
+               "=" => Token::Assign,
                _ => unreachable!(),
            }
        )

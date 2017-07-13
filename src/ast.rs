@@ -20,11 +20,11 @@ impl StmtList {
         self.statements.push(stmt);
     }
 
-    pub fn eval(mut self) -> Result<ValueType> {
+    pub fn eval(mut self) -> Result<Value> {
         for stmt in self.statements {
             println!("{}", stmt.eval(&mut self.scope)?);
         }
-        Ok(ValueType::Nil)
+        Ok(Value::Nil)
     }
 }
 
@@ -33,29 +33,25 @@ pub enum Stmt {
     Assignment(Assignment),
     Expr(Expr),
     StmtList(StmtList),
-    Return(ValueType),
+    Return(Value),
     ParameterList(ParameterList),
     Function(Function),
 }
 
 impl Stmt {
-    pub fn eval(self, scope: &mut Scope) -> Result<ValueType> {
+    pub fn eval(self, scope: &mut Scope) -> Result<Value> {
         match self {
-            Stmt::Assignment(assignment) => {
-                let value = assignment.expr.eval(scope)?;
-                scope.set_variable(assignment.variable, value);
-                Ok(ValueType::Nil)
-            }
+            Stmt::Assignment(assignment) => assignment.eval(scope),
             Stmt::Expr(expr) => expr.eval(scope),
             Stmt::StmtList(list) => list.eval(),
             Stmt::Return(value) => Ok(value),
             Stmt::ParameterList(params) => {
                 println!("Params: {:?}", params);
-                Ok(ValueType::Nil)
+                Ok(Value::Nil)
             }
             Stmt::Function(_function) => {
                 info!("Function!");
-                Ok(ValueType::Nil)
+                Ok(Value::Nil)
             }
         }
     }
@@ -75,9 +71,9 @@ impl Function {
         Function { name, body, params }
     }
 
-    pub fn eval(self) -> ValueType {
+    pub fn eval(self) -> Value {
         info!("Evaluating function");
-        ValueType::Nil
+        Value::Nil
     }
 }
 
@@ -85,17 +81,22 @@ impl Function {
 pub struct Assignment {
     variable: String,
     expr: Expr,
+    type_: ValueType,
 }
 
 impl Assignment {
-    pub fn new(variable: String, expr: Expr) -> Self {
-        Assignment { variable, expr }
+    pub fn new(variable: String, type_: ValueType, expr: Expr) -> Self {
+        Assignment {
+            variable,
+            type_,
+            expr,
+        }
     }
 
-    pub fn eval(self, scope: &mut Scope) -> Result<ValueType> {
+    pub fn eval(self, scope: &mut Scope) -> Result<Value> {
         let value = self.expr.eval(scope)?;
-        scope.set_variable(self.variable, value);
-        Ok(ValueType::Nil)
+        scope.set_variable(self.variable, value, self.type_);
+        Ok(Value::Nil)
     }
 }
 
@@ -113,11 +114,11 @@ pub enum Expr {
     },
     Ident(String),
     FunctionCall(String),
-    Value(ValueType),
+    Value(Value),
 }
 
 impl Expr {
-    pub fn eval(self, scope: &Scope) -> Result<ValueType> {
+    pub fn eval(self, scope: &Scope) -> Result<Value> {
         match self {
             Expr::ArithmeticExpr { operator, lhs, rhs } => {
                 match operator {
@@ -141,7 +142,7 @@ impl Expr {
 }
 
 #[derive(Clone, Debug)]
-pub enum ValueType {
+pub enum Value {
     Bool(bool),
     Int32(i32),
     Float32(f32),
@@ -149,25 +150,25 @@ pub enum ValueType {
     Nil,
 }
 
-impl fmt::Display for ValueType {
+impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ValueType::Nil => write!(f, "nil")?,
-            ValueType::Bool(val) => write!(f, "{}", val)?,
-            ValueType::Int32(val) => write!(f, "{}", val)?,
-            ValueType::Float32(val) => write!(f, "{}", val)?,
-            ValueType::String(ref val) => write!(f, "{}", val)?,
+            Value::Nil => write!(f, "nil")?,
+            Value::Bool(val) => write!(f, "{}", val)?,
+            Value::Int32(val) => write!(f, "{}", val)?,
+            Value::Float32(val) => write!(f, "{}", val)?,
+            Value::String(ref val) => write!(f, "{}", val)?,
         }
 
         Ok(())
     }
 }
 
-impl ::std::ops::Add for ValueType {
-    type Output = Result<ValueType>;
+impl ::std::ops::Add for Value {
+    type Output = Result<Value>;
 
-    fn add(self, other: ValueType) -> Self::Output {
-        use self::ValueType::*;
+    fn add(self, other: Value) -> Self::Output {
+        use self::Value::*;
 
         match (self, other) {
             (Int32(a), Int32(b)) => Ok(Int32(a + b)),
@@ -184,11 +185,11 @@ impl ::std::ops::Add for ValueType {
     }
 }
 
-impl ::std::ops::Sub for ValueType {
-    type Output = Result<ValueType>;
+impl ::std::ops::Sub for Value {
+    type Output = Result<Value>;
 
-    fn sub(self, other: ValueType) -> Self::Output {
-        use self::ValueType::*;
+    fn sub(self, other: Value) -> Self::Output {
+        use self::Value::*;
 
         match (self, other) {
             (Int32(a), Int32(b)) => Ok(Int32(a - b)),
@@ -205,11 +206,11 @@ impl ::std::ops::Sub for ValueType {
     }
 }
 
-impl ::std::ops::Mul for ValueType {
-    type Output = Result<ValueType>;
+impl ::std::ops::Mul for Value {
+    type Output = Result<Value>;
 
-    fn mul(self, other: ValueType) -> Self::Output {
-        use self::ValueType::*;
+    fn mul(self, other: Value) -> Self::Output {
+        use self::Value::*;
 
         match (self, other) {
             (Int32(a), Int32(b)) => Ok(Int32(a * b)),
@@ -226,11 +227,11 @@ impl ::std::ops::Mul for ValueType {
     }
 }
 
-impl ::std::ops::Div for ValueType {
-    type Output = Result<ValueType>;
+impl ::std::ops::Div for Value {
+    type Output = Result<Value>;
 
-    fn div(self, other: ValueType) -> Self::Output {
-        use self::ValueType::*;
+    fn div(self, other: Value) -> Self::Output {
+        use self::Value::*;
 
         match (self, other) {
             (Int32(a), Int32(b)) => Ok(Int32(a / b)),
@@ -247,11 +248,11 @@ impl ::std::ops::Div for ValueType {
     }
 }
 
-impl ::std::ops::Rem for ValueType {
-    type Output = Result<ValueType>;
+impl ::std::ops::Rem for Value {
+    type Output = Result<Value>;
 
-    fn rem(self, other: ValueType) -> Self::Output {
-        use self::ValueType::*;
+    fn rem(self, other: Value) -> Self::Output {
+        use self::Value::*;
 
         match (self, other) {
             (Int32(a), Int32(b)) => Ok(Int32(a % b)),
@@ -268,11 +269,20 @@ impl ::std::ops::Rem for ValueType {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub enum ValueType {
+    Bool,
+    Float,
+    Int,
+    String,
+}
+
 #[derive(Debug)]
 struct Variable {
     defined_in_scope_level: u32,
     name: String,
-    value: ValueType,
+    type_: ValueType,
+    value: Value,
 }
 
 #[derive(Debug)]
@@ -291,7 +301,7 @@ impl Scope {
         }
     }
 
-    fn get_variable(&self, variable: &str) -> Option<&ValueType> {
+    fn get_variable(&self, variable: &str) -> Option<&Value> {
         for var in self.variables.iter().rev() {
             if var.name == variable {
                 return Some(&var.value);
@@ -300,14 +310,24 @@ impl Scope {
         None
     }
 
-    fn set_variable(&mut self, name: String, value: ValueType) {
+    fn set_variable(&mut self, name: String, value: Value, type_: ValueType) {
         if let Some(pos) = self.variables.iter().rev().position(|var| var.name == name) {
-            self.variables[pos].value = value;
+            if self.variables[pos].type_ == type_ {
+                self.variables[pos].value = value;
+            } else {
+                panic!(
+                    "Tried setting variable '{:?}' which is of type '{:?}' to a value of type '{:?}'",
+                    self.variables[pos].name,
+                    self.variables[pos].type_,
+                    type_
+                );
+            }
         } else {
             self.variables.push(Variable {
                 defined_in_scope_level: self.current_scope_level,
                 name,
                 value,
+                type_,
             });
         }
     }

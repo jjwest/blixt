@@ -1,15 +1,9 @@
 use std::mem;
 
-use ast::{Assignment, ArithmeticOp, Expr, Function, LogicOp, ParameterList, Stmt, StmtList,
+use ast::{Assignment, ArithmeticOp, Expr, Function, LogicOp, ParameterList, Stmt, StmtList, Value,
           ValueType};
 use errors::*;
 use lexer::Token;
-
-pub struct Parser {
-    tokens: Vec<Token>,
-    ast: StmtList,
-    pos: usize,
-}
 
 macro_rules! expect_next {
     ( $context:ident, $func:ident, $expected:expr ) => {
@@ -18,6 +12,22 @@ macro_rules! expect_next {
             other => return Err(format!("Expected '{:?}', found '{:?}'", $expected, other).into()),
         }
     }
+}
+
+macro_rules! expected {
+    ( $expected:expr, $got:expr ) => {
+        return Err(format!("Expected '{:?}', found '{:?}'", $expected, $got).into())
+    };
+
+    ( $expected:expr ) => {
+        return Err(format!("Expected '{:?}'", $expected).into())
+    }
+}
+
+pub struct Parser {
+    tokens: Vec<Token>,
+    ast: StmtList,
+    pos: usize,
 }
 
 impl Parser {
@@ -77,11 +87,6 @@ impl Parser {
             return Ok(Some(Stmt::Function(function)));
         }
 
-        if let Some(params) = self.parameter_list()? {
-            debug!("parameterlist");
-            return Ok(Some(Stmt::ParameterList(params)));
-        }
-
         if let Some(assignment) = self.assignment()? {
             debug!("assignment");
             return Ok(Some(Stmt::Assignment(assignment)));
@@ -98,27 +103,59 @@ impl Parser {
         trace!("Entered assignment");
 
         match self.peek(2) {
-            Some(&[Token::Ident(_), Token::Assign]) => {}
+            Some(&[Token::Ident(_), Token::Assign]) |
+            Some(&[Token::Ident(_), Token::Initialize]) |
+            Some(&[Token::Ident(_), Token::AddAssign]) |
+            Some(&[Token::Ident(_), Token::SubAssign]) |
+            Some(&[Token::Ident(_), Token::DivAssign]) |
+            Some(&[Token::Ident(_), Token::MultAssign]) |
+            Some(&[Token::Ident(_), Token::Colon]) => {}
             _ => return Ok(None),
         }
 
         let ident = match self.next_token() {
             Token::Ident(ident) => ident,
-            other => return Err(format!("Expected identifier, found '{:?}'", other).into()),
+            other => expected!("identifier", other),
         };
 
-        expect_next!(self, next_token, Token::Assign);
-
-        let value = match self.expression()? {
-            Some(expr) => *expr,
-            None => {
+        let variable_type = match self.next_token() {
+            Token::Colon => {
+                let type_ = match self.next_token() {
+                    Token::BoolType => ValueType::Bool,
+                    Token::IntType => ValueType::Int,
+                    Token::FloatType => ValueType::Float,
+                    Token::StringType => ValueType::String,
+                    other => return Err(format!("Expected value type, found '{:?}'", other).into()),
+                };
+                expect_next!(self, next_token, Token::Assign);
+                type_
+            }
+            Token::Assign | Token::Initialize => {
+                match self.peek(1) {
+                    Some(&[Token::Bool(_)]) => ValueType::Bool,
+                    Some(&[Token::Integer(_)]) => ValueType::Int,
+                    Some(&[Token::Float(_)]) => ValueType::Float,
+                    Some(&[Token::String(_)]) => ValueType::String,
+                    other => {
+                        return Err(format!("Could not infer type, found '{:?}'", other).into())
+                    }
+                }
+            }
+            other => {
                 return Err(
-                    format!("Expected expression, found '{:?}'", self.next_token()).into(),
+                    format!("Expected type or assignment token, found '{:?}'", other).into(),
                 )
             }
         };
 
-        Ok(Some(Assignment::new(ident, value)))
+        let value = match self.expression()? {
+            Some(expr) => *expr,
+            None => expected!("expression"),
+        };
+
+        let assignment = Assignment::new(ident, variable_type, value);
+        debug!("Assignment: {:?}", assignment);
+        Ok(Some(assignment))
     }
 
     fn parameter_list(&mut self) -> Result<Option<ParameterList>> {
@@ -126,17 +163,20 @@ impl Parser {
 
         let mut params = ParameterList::new();
         loop {
-            match self.expression()? {
-                Some(expr) => {
-                    params.push(*expr);
-                    if self.peek(1) == Some(&[Token::Comma]) {
-                        self.next_token();
-                    } else {
-                        return Ok(Some(params));
-                    }
-                }
-                None => return Ok(Some(params)),
-            }
+            let ident = match self.next_token() {
+                Token::Ident(ident) => ident,
+                other => expected!("identifier", other),
+            };
+
+            expect_next!(self, next_token, Token::Colon);
+
+            let type_ = match self.next_token() {
+                Token::BoolType => ValueType::Bool,
+                Token::FloatType => ValueType::Float,
+                Token::IntType => ValueType::Int,
+                Token::StringType => ValueType::String,
+                other => expected!("Identifier", other),
+            };
         }
     }
 
@@ -152,7 +192,7 @@ impl Parser {
 
         let ident = match self.next_token() {
             Token::Ident(ident) => ident,
-            other => return Err(format!("Expected identifier, found '{:?}'", other).into()),
+            other => expected!("Identifier", other),
         };
 
         expect_next!(self, next_token, Token::OpenParen);
@@ -286,10 +326,10 @@ impl Parser {
                 }
             }
             Token::Ident(name) => Ok(Some(Box::new(Expr::Ident(name)))),
-            Token::Integer(value) => Ok(Some(Box::new(Expr::Value(ValueType::Int32(value))))),
-            Token::Float(value) => Ok(Some(Box::new(Expr::Value(ValueType::Float32(value))))),
-            Token::Bool(value) => Ok(Some(Box::new(Expr::Value(ValueType::Bool(value))))),
-            Token::String(value) => Ok(Some(Box::new(Expr::Value(ValueType::String(value))))),
+            Token::Integer(value) => Ok(Some(Box::new(Expr::Value(Value::Int32(value))))),
+            Token::Float(value) => Ok(Some(Box::new(Expr::Value(Value::Float32(value))))),
+            Token::Bool(value) => Ok(Some(Box::new(Expr::Value(Value::Bool(value))))),
+            Token::String(value) => Ok(Some(Box::new(Expr::Value(Value::String(value))))),
             other => Err(format!("Expected an atom, found '{:?}'", other).into()),
         }
     }
