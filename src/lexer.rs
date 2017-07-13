@@ -4,10 +4,6 @@ use nom::{IResult, alpha, alphanumeric, float, multispace, not_line_ending, digi
 
 use errors::*;
 
-pub struct Lexer<'a> {
-    data: &'a [u8],
-}
-
 #[derive(Debug, PartialEq)]
 pub enum Token {
     // Logical Operators
@@ -77,45 +73,39 @@ pub enum Token {
     Consumed,
 }
 
-impl<'a> Lexer<'a> {
-    pub fn new(data: &'a [u8]) -> Self {
-        Lexer { data }
-    }
+pub fn generate_tokens(mut data: &[u8]) -> Result<Vec<Token>> {
+    let mut tokens = Vec::new();
 
-    pub fn generate_tokens(&mut self) -> Result<Vec<Token>> {
-        let mut tokens = Vec::new();
+    loop {
+        let token = match get_token(data) {
+            IResult::Done(remaining, token) => {
+                data = remaining;
+                token
+            }
+            IResult::Incomplete(needed) => {
+                return Err(
+                    format!("Incomplete parsing, {:?} bytes missing", needed).into(),
+                )
+            }
+            IResult::Error(e) => {
+                debug!("Error: {:?}", e);
+                return Err(format!("Could not parse '{}'", e).into());
+            } 
+        };
 
-        loop {
-            let token = match get_token(self.data) {
-                IResult::Done(remaining, token) => {
-                    self.data = remaining;
-                    token
-                }
-                IResult::Incomplete(needed) => {
-                    return Err(
-                        format!("Incomplete parsing, {:?} bytes missing", needed).into(),
-                    )
-                }
-                IResult::Error(e) => {
-                    debug!("Error: {:?}", e);
-                    return Err(format!("Could not parse '{}'", e).into());
-                } 
-            };
-
-            match token {
-                Token::Eof => {
-                    debug!("Eof");
-                    break;
-                }
-                token => {
-                    debug!("{:?}", token);
-                    tokens.push(token);
-                }
+        match token {
+            Token::Eof => {
+                debug!("Eof");
+                break;
+            }
+            token => {
+                debug!("{:?}", token);
+                tokens.push(token);
             }
         }
-
-        Ok(tokens)
     }
+
+    Ok(tokens)
 }
 
 
@@ -196,6 +186,7 @@ named!(keyword<Token>,
                              | tag!("else")
                              | tag!("for")
                              | tag!("print")
+                             | tag!("return")
                              | tag!("fn")
                              | tag!("while"))),
                     str::from_utf8
@@ -206,6 +197,7 @@ named!(keyword<Token>,
                "else" => Token::Else,
                "for" => Token::For,
                "print" => Token::Print,
+               "return" => Token::Return,
                "fn" => Token::FunctionDeclaration,
                "while" => Token::While,
                _ => unreachable!(),

@@ -17,12 +17,12 @@ use std::io::{BufReader, Read};
 use std::path::Path;
 
 mod ast;
+mod builtins;
 mod errors;
 mod lexer;
 mod parser;
 
 use errors::*;
-use lexer::Lexer;
 use parser::Parser;
 
 fn main() {
@@ -37,8 +37,7 @@ fn main() {
 }
 
 fn run(source: &[u8]) -> Result<()> {
-    let mut lexer = Lexer::new(source);
-    let tokens = lexer.generate_tokens()?;
+    let tokens = lexer::generate_tokens(source)?;
     let mut parser = Parser::new(tokens);
     let program = parser.parse()?;
     program.eval()?;

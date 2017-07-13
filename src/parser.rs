@@ -1,7 +1,8 @@
 use std::mem;
 
-use ast::{Assignment, ArithmeticOp, Expr, Function, LogicOp, Parameter, ParameterList, Stmt,
-          StmtList, Value, ValueType};
+use ast::{Ast, Assignment, ArithmeticOp, Expr, Function, LogicOp, Parameter, ParameterList, Stmt,
+          StmtList};
+use builtins::{Value, ValueKind};
 use errors::*;
 use lexer::Token;
 
@@ -39,8 +40,8 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self) -> Result<StmtList> {
-        let mut syntax_tree = StmtList::new();
+    pub fn parse(&mut self) -> Result<Ast> {
+        let mut syntax_tree = Ast::new();
 
         while self.pos < self.tokens.len() {
             syntax_tree.add_stmt(match self.statement()? {
@@ -73,7 +74,7 @@ impl Parser {
     fn statement_list(&mut self) -> Result<Option<StmtList>> {
         let mut stmt_list = StmtList::new();
         while let Some(stmt) = self.statement()? {
-            stmt_list.add_stmt(stmt);
+            stmt_list.0.push(stmt);
         }
 
         Ok(Some(stmt_list))
@@ -118,10 +119,10 @@ impl Parser {
         let variable_type = match self.next_token() {
             Token::Colon => {
                 let type_ = match self.next_token() {
-                    Token::BoolType => ValueType::Bool,
-                    Token::IntType => ValueType::Int,
-                    Token::FloatType => ValueType::Float,
-                    Token::StringType => ValueType::String,
+                    Token::BoolType => ValueKind::Bool,
+                    Token::IntType => ValueKind::Int,
+                    Token::FloatType => ValueKind::Float,
+                    Token::StringType => ValueKind::String,
                     other => return Err(format!("Expected value type, found '{:?}'", other).into()),
                 };
                 expect_next!(self, next_token, Token::Assign);
@@ -129,10 +130,10 @@ impl Parser {
             }
             Token::Assign | Token::Initialize => {
                 match self.peek(1) {
-                    Some(&[Token::Bool(_)]) => ValueType::Bool,
-                    Some(&[Token::Integer(_)]) => ValueType::Int,
-                    Some(&[Token::Float(_)]) => ValueType::Float,
-                    Some(&[Token::String(_)]) => ValueType::String,
+                    Some(&[Token::Bool(_)]) => ValueKind::Bool,
+                    Some(&[Token::Integer(_)]) => ValueKind::Int,
+                    Some(&[Token::Float(_)]) => ValueKind::Float,
+                    Some(&[Token::String(_)]) => ValueKind::String,
                     other => {
                         return Err(format!("Could not infer type, found '{:?}'", other).into())
                     }
@@ -173,10 +174,10 @@ impl Parser {
             expect_next!(self, next_token, Token::Colon);
 
             let type_ = match self.next_token() {
-                Token::BoolType => ValueType::Bool,
-                Token::FloatType => ValueType::Float,
-                Token::IntType => ValueType::Int,
-                Token::StringType => ValueType::String,
+                Token::BoolType => ValueKind::Bool,
+                Token::FloatType => ValueKind::Float,
+                Token::IntType => ValueKind::Int,
+                Token::StringType => ValueKind::String,
                 other => expected!("type", other),
             };
 
@@ -210,10 +211,10 @@ impl Parser {
         let return_type = if let Some(&[Token::ReturnDeclaration]) = self.peek(1) {
             self.next_token();
             let type_ = match self.next_token() {
-                Token::BoolType => ValueType::Bool,
-                Token::FloatType => ValueType::Float,
-                Token::IntType => ValueType::Int,
-                Token::StringType => ValueType::String,
+                Token::BoolType => ValueKind::Bool,
+                Token::FloatType => ValueKind::Float,
+                Token::IntType => ValueKind::Int,
+                Token::StringType => ValueKind::String,
                 other => expected!("Value type", other),
             };
             Some(type_)
@@ -342,9 +343,7 @@ impl Parser {
     fn atom(&mut self) -> Result<Option<Box<Expr>>> {
         trace!("Entered atom");
 
-        debug!("NEXT: {:?}", self.peek(1));
         if let Some(&[Token::CloseBrace]) = self.peek(1) {
-            info!("CLOSE BRACE");
             return Ok(None);
         }
 

@@ -1,28 +1,41 @@
-use std::fmt;
-
+use builtins::{Value, ValueKind};
 use errors::*;
 
 #[derive(Debug)]
-pub struct StmtList {
-    statements: Vec<Stmt>,
-    scope: Scope,
+pub struct Ast {
+    global_scope: Scope,
+    statements: StmtList,
 }
 
-impl StmtList {
-    pub fn new() -> Self {
-        StmtList {
-            statements: Vec::new(),
-            scope: Scope::new(),
+impl Ast {
+    pub fn new() -> Ast {
+        Ast {
+            global_scope: Scope::new(),
+            statements: StmtList::new(),
         }
     }
 
     pub fn add_stmt(&mut self, stmt: Stmt) {
-        self.statements.push(stmt);
+        self.statements.0.push(stmt);
     }
 
-    pub fn eval(mut self) -> Result<Value> {
-        for stmt in self.statements {
-            println!("{}", stmt.eval(&mut self.scope)?);
+    pub fn eval(mut self) -> Result<()> {
+        self.statements.eval(&mut self.global_scope)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct StmtList(pub Vec<Stmt>);
+
+impl StmtList {
+    pub fn new() -> Self {
+        StmtList(Vec::new())
+    }
+
+    pub fn eval(self, scope: &mut Scope) -> Result<Value> {
+        for stmt in self.0 {
+            println!("{}", stmt.eval(scope)?);
         }
         Ok(Value::Nil)
     }
@@ -43,16 +56,13 @@ impl Stmt {
         match self {
             Stmt::Assignment(assignment) => assignment.eval(scope),
             Stmt::Expr(expr) => expr.eval(scope),
-            Stmt::StmtList(list) => list.eval(),
+            Stmt::StmtList(list) => list.eval(scope),
             Stmt::Return(value) => Ok(value),
             Stmt::ParameterList(params) => {
                 println!("Params: {:?}", params);
                 Ok(Value::Nil)
             }
-            Stmt::Function(_function) => {
-                info!("Function!");
-                Ok(Value::Nil)
-            }
+            Stmt::Function(_function) => Ok(Value::Nil),
         }
     }
 }
@@ -61,11 +71,11 @@ impl Stmt {
 #[derive(Debug)]
 pub struct Parameter {
     name: String,
-    type_: ValueType,
+    type_: ValueKind,
 }
 
 impl Parameter {
-    pub fn new(name: String, type_: ValueType) -> Self {
+    pub fn new(name: String, type_: ValueKind) -> Self {
         Self { name, type_ }
     }
 }
@@ -77,7 +87,8 @@ pub struct Function {
     name: String,
     body: StmtList,
     params: ParameterList,
-    return_type: Option<ValueType>,
+    return_type: Option<ValueKind>,
+    scope: Scope,
 }
 
 impl Function {
@@ -85,18 +96,18 @@ impl Function {
         name: String,
         body: StmtList,
         params: ParameterList,
-        return_type: Option<ValueType>,
+        return_type: Option<ValueKind>,
     ) -> Self {
         Function {
             name,
             body,
             params,
             return_type,
+            scope: Scope::new(),
         }
     }
 
-    pub fn eval(self) -> Value {
-        info!("Evaluating function");
+    pub fn eval(self, _scope: &mut Scope) -> Value {
         Value::Nil
     }
 }
@@ -105,11 +116,11 @@ impl Function {
 pub struct Assignment {
     variable: String,
     expr: Expr,
-    type_: ValueType,
+    type_: ValueKind,
 }
 
 impl Assignment {
-    pub fn new(variable: String, type_: ValueType, expr: Expr) -> Self {
+    pub fn new(variable: String, type_: ValueKind, expr: Expr) -> Self {
         Assignment {
             variable,
             type_,
@@ -119,7 +130,7 @@ impl Assignment {
 
     pub fn eval(self, scope: &mut Scope) -> Result<Value> {
         let value = self.expr.eval(scope)?;
-        scope.set_variable(self.variable, value, self.type_);
+        scope.set_variable(self.variable, value, self.type_)?;
         Ok(Value::Nil)
     }
 }
@@ -153,159 +164,19 @@ impl Expr {
                     ArithmeticOp::Mod => lhs.eval(scope)? % rhs.eval(scope)?,
                 }
             }
-            Expr::Ident(name) => {
-                match scope.get_variable(&name) {
-                    Some(value) => Ok(value.clone()),
-                    None => Err(format!("Variable '{}' is undefined", name).into()),
-                }
-            }
+            Expr::Ident(name) => scope.get_variable(&name),
             Expr::Value(value) => Ok(value),
             _ => unimplemented!(),
         }
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum Value {
-    Bool(bool),
-    Int32(i32),
-    Float32(f32),
-    String(String),
-    Nil,
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Value::Nil => write!(f, "nil")?,
-            Value::Bool(val) => write!(f, "{}", val)?,
-            Value::Int32(val) => write!(f, "{}", val)?,
-            Value::Float32(val) => write!(f, "{}", val)?,
-            Value::String(ref val) => write!(f, "{}", val)?,
-        }
-
-        Ok(())
-    }
-}
-
-impl ::std::ops::Add for Value {
-    type Output = Result<Value>;
-
-    fn add(self, other: Value) -> Self::Output {
-        use self::Value::*;
-
-        match (self, other) {
-            (Int32(a), Int32(b)) => Ok(Int32(a + b)),
-            (Float32(a), Float32(b)) => Ok(Float32(a + b)),
-            (Int32(_), Float32(_)) |
-            (Float32(_), Int32(_)) => Err("Cannot add an integer with a float".into()),
-            (Int32(_), Bool(_)) |
-            (Bool(_), Int32(_)) => Err("Cannot add an integer with a bool".into()),
-            (Float32(_), Bool(_)) |
-            (Bool(_), Float32(_)) => Err("Cannot add a float with a bool".into()),
-            (Bool(_), Bool(_)) => Err("Cannot add bools".into()),
-            _ => Err("Cannot add with nil".into()),
-        }
-    }
-}
-
-impl ::std::ops::Sub for Value {
-    type Output = Result<Value>;
-
-    fn sub(self, other: Value) -> Self::Output {
-        use self::Value::*;
-
-        match (self, other) {
-            (Int32(a), Int32(b)) => Ok(Int32(a - b)),
-            (Float32(a), Float32(b)) => Ok(Float32(a - b)),
-            (Int32(_), Float32(_)) |
-            (Float32(_), Int32(_)) => Err("Cannot subtract an int from a bool".into()),
-            (Int32(_), Bool(_)) |
-            (Bool(_), Int32(_)) => Err("Cannot subtract an integer with a bool".into()),
-            (Float32(_), Bool(_)) |
-            (Bool(_), Float32(_)) => Err("Cannot subtract a float with a bool".into()),
-            (Bool(_), Bool(_)) => Err("Cannot subtract bools".into()),
-            _ => Err("Cannot subtract with nil".into()),
-        }
-    }
-}
-
-impl ::std::ops::Mul for Value {
-    type Output = Result<Value>;
-
-    fn mul(self, other: Value) -> Self::Output {
-        use self::Value::*;
-
-        match (self, other) {
-            (Int32(a), Int32(b)) => Ok(Int32(a * b)),
-            (Float32(a), Float32(b)) => Ok(Float32(a * b)),
-            (Int32(_), Float32(_)) |
-            (Float32(_), Int32(_)) => Err("Cannot multiply an int with a float".into()),
-            (Int32(_), Bool(_)) |
-            (Bool(_), Int32(_)) => Err("Cannot multiply an integer with a bool".into()),
-            (Float32(_), Bool(_)) |
-            (Bool(_), Float32(_)) => Err("Cannot multiply a float with a bool".into()),
-            (Bool(_), Bool(_)) => Err("Cannot multiply bools".into()),
-            _ => Err("Cannot multiply with nil".into()),
-        }
-    }
-}
-
-impl ::std::ops::Div for Value {
-    type Output = Result<Value>;
-
-    fn div(self, other: Value) -> Self::Output {
-        use self::Value::*;
-
-        match (self, other) {
-            (Int32(a), Int32(b)) => Ok(Int32(a / b)),
-            (Float32(a), Float32(b)) => Ok(Float32(a / b)),
-            (Int32(_), Float32(_)) |
-            (Float32(_), Int32(_)) => Err("Cannot divide an int with a float".into()),
-            (Int32(_), Bool(_)) |
-            (Bool(_), Int32(_)) => Err("Cannot divide an integer with a bool".into()),
-            (Float32(_), Bool(_)) |
-            (Bool(_), Float32(_)) => Err("Cannot divide a float with a bool".into()),
-            (Bool(_), Bool(_)) => Err("Cannot divide bools".into()),
-            _ => Err("Cannot divide with nil".into()),
-        }
-    }
-}
-
-impl ::std::ops::Rem for Value {
-    type Output = Result<Value>;
-
-    fn rem(self, other: Value) -> Self::Output {
-        use self::Value::*;
-
-        match (self, other) {
-            (Int32(a), Int32(b)) => Ok(Int32(a % b)),
-            (Float32(a), Float32(b)) => Ok(Float32(a % b)),
-            (Int32(_), Float32(_)) => Err("Cannot divide a int with an float".into()),
-            (Float32(_), Int32(_)) => Err("Cannot divide a float with an int".into()),
-            (Int32(_), Bool(_)) => Err("Cannot divide an int with a bool".into()),
-            (Bool(_), Int32(_)) => Err("Cannot divide a bool with a float".into()),
-            (Float32(_), Bool(_)) |
-            (Bool(_), Float32(_)) |
-            (Bool(_), Bool(_)) => Err("Cannot use modulo with bools".into()),
-            _ => Err("Cannot modulo with nil".into()),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum ValueType {
-    Bool,
-    Float,
-    Int,
-    String,
-}
 
 #[derive(Debug)]
 pub struct Variable {
     defined_in_scope_level: u32,
     name: String,
-    type_: ValueType,
+    type_: ValueKind,
     value: Value,
 }
 
@@ -325,26 +196,25 @@ impl Scope {
         }
     }
 
-    fn get_variable(&self, variable: &str) -> Option<&Value> {
+    fn get_variable(&self, variable: &str) -> Result<Value> {
         for var in self.variables.iter().rev() {
             if var.name == variable {
-                return Some(&var.value);
+                return Ok(var.value.clone());
             }
         }
-        None
+        Err(format!("Variable '{}' is undefined", variable).into())
     }
 
-    fn set_variable(&mut self, name: String, value: Value, type_: ValueType) {
+    fn set_variable(&mut self, name: String, value: Value, type_: ValueKind) -> Result<Value> {
         if let Some(pos) = self.variables.iter().rev().position(|var| var.name == name) {
             if self.variables[pos].type_ == type_ {
                 self.variables[pos].value = value;
+                Ok(Value::Nil)
             } else {
-                panic!(
-                    "Tried setting variable '{:?}' which is of type '{:?}' to a value of type '{:?}'",
-                    self.variables[pos].name,
-                    self.variables[pos].type_,
-                    type_
-                );
+                Err(format!("Tried setting variable '{:?}' which is of type '{:?}' to a value of type '{:?}'",
+                            self.variables[pos].name,
+                            self.variables[pos].type_,
+                            type_).into())
             }
         } else {
             self.variables.push(Variable {
@@ -353,6 +223,7 @@ impl Scope {
                 value,
                 type_,
             });
+            Ok(Value::Nil)
         }
     }
 
