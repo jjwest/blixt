@@ -1,7 +1,7 @@
-#![feature(plugin, box_patterns, slice_patterns)]
+#![feature(slice_patterns)]
+#![cfg_attr(feature="clippy", feature(plugin))]
 
-#![plugin(clippy)]
-#![allow(dead_code)]
+#![cfg_attr(feature="clippy", plugin(clippy))]
 
 #[macro_use]
 extern crate error_chain;

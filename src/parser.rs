@@ -1,24 +1,19 @@
 use std::mem;
 
-use ast::{AbstractSyntaxTree, Assignment, ArithmeticOp, Expr, Function, LogicOp, Parameter,
-          ParameterList, Stmt, StmtList};
+use ast::{AbstractSyntaxTree, ArgumentList, Assignment, ArithmeticOp, Expr, Function, LogicOp,
+          Parameter, ParameterList, Stmt, StmtList};
 use builtins::{Value, ValueKind};
 use errors::*;
 use lexer::Token;
 
 pub struct Parser {
     tokens: Vec<Token>,
-    ast: StmtList,
     pos: usize,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Parser {
-            tokens,
-            ast: StmtList::new(),
-            pos: 0,
-        }
+        Parser { tokens, pos: 0 }
     }
 
     pub fn parse(&mut self) -> Result<AbstractSyntaxTree> {
@@ -137,19 +132,14 @@ impl Parser {
         Ok(Some(assignment))
     }
 
-    fn parameter_list(&mut self) -> Result<Option<ParameterList>> {
+    fn parameter_list(&mut self) -> Result<ParameterList> {
         trace!("Entered parameter_list");
-
         let mut params = ParameterList::new();
-        loop {
-            match self.peek(1) {
-                Some(&[Token::Ident(_)]) => {}
-                _ => return Ok(Some(params)),
-            }
 
+        while let Some(&[Token::Ident(_)]) = self.peek(1) {
             let ident = match self.next_token() {
                 Token::Ident(ident) => ident,
-                other => expected!("identifier", other),
+                _ => unreachable!(),
             };
 
             expect_next!(self, next_token, Token::Colon);
@@ -168,6 +158,8 @@ impl Parser {
 
             params.push(Parameter::new(ident, type_));
         }
+
+        Ok(params)
     }
 
     fn function_declaration(&mut self) -> Result<Option<Function>> {
@@ -186,7 +178,7 @@ impl Parser {
         };
 
         expect_next!(self, next_token, Token::OpenParen);
-        let params = self.parameter_list()?.expect("Expected params");
+        let params = self.parameter_list()?;
         expect_next!(self, next_token, Token::CloseParen);
 
         let return_type = if let Some(&[Token::ReturnDeclaration]) = self.peek(1) {
@@ -212,6 +204,19 @@ impl Parser {
         let function = Function::new(ident, body, params, return_type);
         debug!("Function: {:#?}", function);
         Ok(Some(function))
+    }
+
+    fn argument_list(&mut self) -> Result<ArgumentList> {
+        let mut list = ArgumentList::new();
+
+        while let Some(expr) = self.expression()? {
+            list.push(*expr);
+            if let Some(&[Token::Comma]) = self.peek(1) {
+                self.next_token();
+            }
+        }
+
+        Ok(list)
     }
 
     fn expression(&mut self) -> Result<Option<Box<Expr>>> {

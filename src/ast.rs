@@ -112,6 +112,14 @@ impl Function {
     }
 }
 
+pub type ArgumentList = Vec<Expr>;
+
+#[derive(Debug)]
+pub struct FunctionCall {
+    name: String,
+    args: ArgumentList,
+}
+
 #[derive(Debug)]
 pub struct Assignment {
     variable: String,
