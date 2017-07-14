@@ -35,7 +35,7 @@ impl StmtList {
 
     pub fn eval(self, scope: &mut Scope) -> Result<Value> {
         for stmt in self.0 {
-            println!("{}", stmt.eval(scope)?);
+            stmt.eval(scope)?;
         }
         Ok(Value::Nil)
     }

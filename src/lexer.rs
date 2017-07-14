@@ -87,9 +87,13 @@ pub fn generate_tokens(mut data: &[u8]) -> Result<Vec<Token>> {
                     format!("Incomplete parsing, {:?} bytes missing", needed).into(),
                 )
             }
-            IResult::Error(e) => {
-                debug!("Error: {:?}", e);
-                return Err(format!("Could not parse '{}'", e).into());
+            IResult::Error(_) => {
+                let source = str::from_utf8(data).chain_err(
+                    || "Source file is not valid UTF-8",
+                )?;
+                return Err(
+                    format!("Could not parse '{}'", source.chars().next().unwrap()).into(),
+                );
             } 
         };
 
