@@ -98,6 +98,7 @@ pub fn generate_tokens(mut data: &[u8]) -> Result<Vec<Token>> {
         };
 
         match token {
+            Token::Comment => continue,
             Token::Eof => {
                 debug!("Eof");
                 break;
