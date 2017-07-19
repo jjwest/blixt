@@ -1,7 +1,7 @@
 use std::mem;
 
-use ast::{AbstractSyntaxTree, ArgumentList, Assignment, ArithmeticOp, Expr, Function, LogicOp,
-          Parameter, ParameterList, Stmt, StmtList};
+use ast::{AbstractSyntaxTree, ArgumentList, Assignment, ArithmeticOp, Expr, Function,
+          FunctionCall, LogicOp, Parameter, ParameterList, Stmt, StmtList};
 use builtins::{Value, ValueKind};
 use errors::*;
 use lexer::Token;
@@ -206,19 +206,6 @@ impl Parser {
         Ok(Some(function))
     }
 
-    fn argument_list(&mut self) -> Result<ArgumentList> {
-        let mut list = ArgumentList::new();
-
-        while let Some(expr) = self.expression()? {
-            list.push(*expr);
-            if let Some(&[Token::Comma]) = self.peek(1) {
-                self.next_token();
-            }
-        }
-
-        Ok(list)
-    }
-
     fn expression(&mut self) -> Result<Option<Box<Expr>>> {
         trace!("Entered expression");
         let expr = self.logical_expression();
@@ -322,8 +309,43 @@ impl Parser {
         } else {
             Ok(None)
         }
+    }
 
+    fn argument_list(&mut self) -> Result<ArgumentList> {
+        trace!("Entered argument_list");
+        let mut list = ArgumentList::new();
 
+        while let Some(expr) = self.expression()? {
+            list.push(*expr);
+            if let Some(&[Token::Comma]) = self.peek(1) {
+                self.next_token();
+            }
+        }
+
+        Ok(list)
+    }
+
+    fn function_call(&mut self) -> Result<Option<Box<Expr>>> {
+        trace!("Entered function_call");
+
+        if let Some(&[Token::Ident(_), Token::OpenParen]) = self.peek(2) {
+            let ident = match self.next_token() {
+                Token::Ident(ident) => ident,
+                other => expected!("Identifier", other),
+            };
+
+            expect_next!(self, next_token, Token::OpenParen);
+            let args = self.argument_list()?;
+            expect_next!(self, next_token, Token::CloseParen);
+
+            let call = Box::new(Expr::FunctionCall(FunctionCall::new(ident, args)));
+            debug!("FunctionCall: {:#?}", call);
+
+            Ok(Some(call))
+
+        } else {
+            Ok(None)
+        }
     }
 
     fn atom(&mut self) -> Result<Option<Box<Expr>>> {
@@ -331,6 +353,10 @@ impl Parser {
 
         if let Some(&[Token::CloseBrace]) = self.peek(1) {
             return Ok(None);
+        }
+
+        if let Some(call) = self.function_call()? {
+            return Ok(Some(call));
         }
 
         match self.next_token() {

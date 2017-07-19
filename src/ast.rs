@@ -120,6 +120,12 @@ pub struct FunctionCall {
     args: ArgumentList,
 }
 
+impl FunctionCall {
+    pub fn new(name: String, args: ArgumentList) -> Self {
+        Self { name, args }
+    }
+}
+
 #[derive(Debug)]
 pub struct Assignment {
     variable: String,
@@ -156,7 +162,7 @@ pub enum Expr {
         rhs: Box<Expr>,
     },
     Ident(String),
-    FunctionCall(String),
+    FunctionCall(FunctionCall),
     Value(Value),
 }
 

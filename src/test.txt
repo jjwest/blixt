@@ -1,7 +1,11 @@
 name: string = "Jonas"
 age := 27
 height := 125.3
+is_programmer := true
 
-fn hello(name: string, age: int, is_programmer: bool) -> int {
+fn hello(name: string, age: int, is_programmer: bool) {
   name := "Jonas"
+  // Things
 }
+
+hello(name, age, is_programmer)

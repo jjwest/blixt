@@ -9,7 +9,7 @@ extern crate error_chain;
 extern crate log;
 #[macro_use]
 extern crate nom;
-extern crate env_logger;
+extern crate pretty_env_logger;
 
 use std::env;
 use std::fs::File;
@@ -28,7 +28,7 @@ use errors::*;
 use parser::Parser;
 
 fn main() {
-    env_logger::init().unwrap();
+    pretty_env_logger::init().unwrap();
 
     if let Err(e) = parse_args().and_then(|src| run(&src)) {
         eprintln!("error: {}", e);
