@@ -28,9 +28,9 @@ impl Parser {
         Ok(syntax_tree)
     }
 
-    fn next_token(&mut self) -> Token {
+    fn eat_token(&mut self) -> Token {
         if self.pos >= self.tokens.len() {
-            panic!("Called next_token when no tokens are left")
+            panic!("Called eat_token when no tokens are left")
         }
 
         let token = mem::replace(&mut self.tokens[self.pos], Token::Consumed);
@@ -87,21 +87,21 @@ impl Parser {
             _ => return Ok(None),
         }
 
-        let ident = match self.next_token() {
+        let ident = match self.eat_token() {
             Token::Ident(ident) => ident,
             other => expected!("identifier", other),
         };
 
-        let variable_type = match self.next_token() {
+        let variable_type = match self.eat_token() {
             Token::Colon => {
-                let type_ = match self.next_token() {
+                let type_ = match self.eat_token() {
                     Token::BoolType => ValueKind::Bool,
                     Token::IntType => ValueKind::Int,
                     Token::FloatType => ValueKind::Float,
                     Token::StringType => ValueKind::String,
                     other => return Err(format!("Expected value type, found '{:?}'", other).into()),
                 };
-                expect_next!(self, next_token, Token::Assign);
+                expect_next!(self, eat_token, Token::Assign);
                 type_
             }
             Token::Assign | Token::Initialize => {
@@ -137,14 +137,14 @@ impl Parser {
         let mut params = ParameterList::new();
 
         while let Some(&[Token::Ident(_)]) = self.peek(1) {
-            let ident = match self.next_token() {
+            let ident = match self.eat_token() {
                 Token::Ident(ident) => ident,
                 _ => unreachable!(),
             };
 
-            expect_next!(self, next_token, Token::Colon);
+            expect_next!(self, eat_token, Token::Colon);
 
-            let type_ = match self.next_token() {
+            let type_ = match self.eat_token() {
                 Token::BoolType => ValueKind::Bool,
                 Token::FloatType => ValueKind::Float,
                 Token::IntType => ValueKind::Int,
@@ -153,7 +153,7 @@ impl Parser {
             };
 
             if let Some(&[Token::Comma]) = self.peek(1) {
-                self.next_token();
+                self.eat_token();
             }
 
             params.push(Parameter::new(ident, type_));
@@ -170,20 +170,20 @@ impl Parser {
             _ => return Ok(None),
         }
 
-        expect_next!(self, next_token, Token::FunctionDeclaration);
+        expect_next!(self, eat_token, Token::FunctionDeclaration);
 
-        let ident = match self.next_token() {
+        let ident = match self.eat_token() {
             Token::Ident(ident) => ident,
             other => expected!("Identifier", other),
         };
 
-        expect_next!(self, next_token, Token::OpenParen);
+        expect_next!(self, eat_token, Token::OpenParen);
         let params = self.parameter_list()?;
-        expect_next!(self, next_token, Token::CloseParen);
+        expect_next!(self, eat_token, Token::CloseParen);
 
         let return_type = if let Some(&[Token::ReturnDeclaration]) = self.peek(1) {
-            self.next_token();
-            let type_ = match self.next_token() {
+            self.eat_token();
+            let type_ = match self.eat_token() {
                 Token::BoolType => ValueKind::Bool,
                 Token::FloatType => ValueKind::Float,
                 Token::IntType => ValueKind::Int,
@@ -195,11 +195,11 @@ impl Parser {
             None
         };
 
-        expect_next!(self, next_token, Token::OpenBrace);
+        expect_next!(self, eat_token, Token::OpenBrace);
 
         let body = self.statement_list()?.expect("Expected function body");
 
-        expect_next!(self, next_token, Token::CloseBrace);
+        expect_next!(self, eat_token, Token::CloseBrace);
 
         let function = Function::new(ident, body, params, return_type);
         debug!("Function: {:#?}", function);
@@ -227,7 +227,7 @@ impl Parser {
             };
 
             // And the operator
-            self.next_token();
+            self.eat_token();
 
             Ok(Some(Box::new(Expr::LogicalExpr {
                 lhs: term,
@@ -235,7 +235,7 @@ impl Parser {
                     Some(expr) => expr,
                     None => {
                         return Err(
-                            format!("Expected expression, found '{:?}'", self.next_token())
+                            format!("Expected expression, found '{:?}'", self.eat_token())
                                 .into(),
                         )
                     }
@@ -258,7 +258,7 @@ impl Parser {
             };
 
             // And the operator
-            self.next_token();
+            self.eat_token();
 
             Ok(Some(Box::new(Expr::ArithmeticExpr {
                 lhs: term,
@@ -266,7 +266,7 @@ impl Parser {
                     Some(expr) => expr,
                     None => {
                         return Err(
-                            format!("Expected expression, found '{:?}'", self.next_token())
+                            format!("Expected expression, found '{:?}'", self.eat_token())
                                 .into(),
                         )
                     }
@@ -291,7 +291,7 @@ impl Parser {
             };
 
             // And the operator
-            self.next_token();
+            self.eat_token();
 
             Ok(Some(Box::new(Expr::ArithmeticExpr {
                 lhs: factor,
@@ -299,7 +299,7 @@ impl Parser {
                     Some(expr) => expr,
                     None => {
                         return Err(
-                            format!("Expected expression, found '{:?}'", self.next_token())
+                            format!("Expected expression, found '{:?}'", self.eat_token())
                                 .into(),
                         )
                     }
@@ -318,7 +318,7 @@ impl Parser {
         while let Some(expr) = self.expression()? {
             list.push(*expr);
             if let Some(&[Token::Comma]) = self.peek(1) {
-                self.next_token();
+                self.eat_token();
             }
         }
 
@@ -329,14 +329,14 @@ impl Parser {
         trace!("Entered function_call");
 
         if let Some(&[Token::Ident(_), Token::OpenParen]) = self.peek(2) {
-            let ident = match self.next_token() {
+            let ident = match self.eat_token() {
                 Token::Ident(ident) => ident,
                 other => expected!("Identifier", other),
             };
 
-            expect_next!(self, next_token, Token::OpenParen);
+            expect_next!(self, eat_token, Token::OpenParen);
             let args = self.argument_list()?;
-            expect_next!(self, next_token, Token::CloseParen);
+            expect_next!(self, eat_token, Token::CloseParen);
 
             let call = Box::new(Expr::FunctionCall(FunctionCall::new(ident, args)));
             debug!("FunctionCall: {:#?}", call);
@@ -351,29 +351,46 @@ impl Parser {
     fn atom(&mut self) -> Result<Option<Box<Expr>>> {
         trace!("Entered atom");
 
-        if let Some(&[Token::CloseBrace]) = self.peek(1) {
-            return Ok(None);
-        }
-
         if let Some(call) = self.function_call()? {
             return Ok(Some(call));
         }
-
-        match self.next_token() {
-            Token::OpenParen => {
+        
+        match self.peek(1) {
+            Some(&[Token::OpenParen]) => {
+                self.eat_token();
                 let expr = self.expression()?;
-                match self.next_token() {
+                match self.eat_token() {
                     Token::CloseParen => Ok(expr),
                     token => Err(format!("Expected ')', found '{:?}'", token).into()),
 
                 }
             }
-            Token::Ident(name) => Ok(Some(Box::new(Expr::Ident(name)))),
-            Token::Integer(value) => Ok(Some(Box::new(Expr::Value(Value::Int32(value))))),
-            Token::Float(value) => Ok(Some(Box::new(Expr::Value(Value::Float32(value))))),
-            Token::Bool(value) => Ok(Some(Box::new(Expr::Value(Value::Bool(value))))),
-            Token::String(value) => Ok(Some(Box::new(Expr::Value(Value::String(value))))),
-            _ => Ok(None),
+            Some(&[Token::Ident(_)]) =>
+                match self.eat_token() {
+                    Token::Ident(name) => Ok(Some(Box::new(Expr::Ident(name)))),
+                    _ => unreachable!(),
+                } ,
+            Some(&[Token::Integer(value)]) => {
+                self.eat_token();
+                Ok(Some(Box::new(Expr::Value(Value::Int32(value)))))
+            },
+            Some(&[Token::Float(value)]) => {
+                self.eat_token();
+                Ok(Some(Box::new(Expr::Value(Value::Float32(value)))))
+            },
+            Some(&[Token::Bool(value)]) => {
+                self.eat_token();
+                Ok(Some(Box::new(Expr::Value(Value::Bool(value)))))
+            },
+            Some(&[Token::String(_)]) => {
+                match self.eat_token() {
+                    Token::String(value) => Ok(Some(Box::new(Expr::Value(Value::String(value))))),
+                    _ => unreachable!(),
+                }
+            } ,
+            _ => {
+                Ok(None)
+            }
         }
     }
 }
