@@ -3,7 +3,7 @@ use std::fmt;
 use errors::*;
 
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ValueKind {
     Bool,
     Float,

@@ -1,16 +1,19 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use builtins::{Value, ValueKind};
 use errors::*;
 
 #[derive(Debug)]
 pub struct AbstractSyntaxTree {
-    global_scope: Scope,
+    scope: Scope,
     statements: StmtList,
 }
 
 impl AbstractSyntaxTree {
     pub fn new() -> AbstractSyntaxTree {
         AbstractSyntaxTree {
-            global_scope: Scope::new(),
+            scope: Scope::new(),
             statements: StmtList::new(),
         }
     }
@@ -20,7 +23,7 @@ impl AbstractSyntaxTree {
     }
 
     pub fn eval(mut self) -> Result<()> {
-        self.statements.eval(&mut self.global_scope)?;
+        self.statements.eval(&mut self.scope)?;
         Ok(())
     }
 }
@@ -48,7 +51,7 @@ pub enum Stmt {
     StmtList(StmtList),
     Return(Value),
     ParameterList(ParameterList),
-    Function(Function),
+    FunctionDeclaration(FunctionDeclaration),
 }
 
 impl Stmt {
@@ -62,7 +65,7 @@ impl Stmt {
                 println!("Params: {:?}", params);
                 Ok(Value::Nil)
             }
-            Stmt::Function(_function) => Ok(Value::Nil),
+            Stmt::FunctionDeclaration(_function) => Ok(Value::Nil),
         }
     }
 }
@@ -71,43 +74,44 @@ impl Stmt {
 #[derive(Debug)]
 pub struct Parameter {
     name: String,
-    type_: ValueKind,
+    kind: ValueKind,
 }
 
 impl Parameter {
-    pub fn new(name: String, type_: ValueKind) -> Self {
-        Self { name, type_ }
+    pub fn new(name: String, kind: ValueKind) -> Self {
+        Self { name, kind }
     }
 }
 
 pub type ParameterList = Vec<Parameter>;
 
 #[derive(Debug)]
-pub struct Function {
+pub struct FunctionDeclaration {
     name: String,
     body: StmtList,
     params: ParameterList,
     return_type: Option<ValueKind>,
-    scope: Scope,
+    defined_in_scope_level: u32,
 }
 
-impl Function {
+impl FunctionDeclaration {
     pub fn new(
         name: String,
         body: StmtList,
         params: ParameterList,
         return_type: Option<ValueKind>,
     ) -> Self {
-        Function {
+        FunctionDeclaration {
             name,
             body,
             params,
             return_type,
-            scope: Scope::new(),
+            defined_in_scope_level: 0,
         }
     }
 
-    pub fn eval(self, _scope: &mut Scope) -> Value {
+    pub fn eval(self, scope: &mut Scope) -> Value {
+        scope.add_function(self);
         Value::Nil
     }
 }
@@ -124,27 +128,54 @@ impl FunctionCall {
     pub fn new(name: String, args: ArgumentList) -> Self {
         Self { name, args }
     }
+
+    pub fn eval(self, scope: &mut Scope) -> Result<Value> {
+        let FunctionCall { name, args } = self;
+        let mut evaluated_args = Vec::with_capacity(args.len());
+        
+        for arg in args {
+            evaluated_args.push(arg.eval(scope)?);
+        }
+
+        if let Some(func) = scope.functions.iter().find(|func| func.name == name) {
+            for (param, arg) in func.params.iter().zip(evaluated_args.iter()) {
+                match (param.kind, arg) {
+                    (ValueKind::Bool, &Value::Bool(_)) |
+                    (ValueKind::Float, &Value::Float32(_)) |
+                    (ValueKind::Int, &Value::Int32(_)) |
+                    (ValueKind::String, &Value::String(_)) => {},
+                    _ => return Err(format!("Parameter '{:?}' is of type {:?}, but received an argument of type {:?}",
+                                            param.name,
+                                            param.kind,
+                                            arg).into())
+                }
+            }
+            Ok(Value::Nil)
+        } else {
+            Err(format!("Tried calling non-defined function '{}'", name).into())
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct Assignment {
     variable: String,
     expr: Expr,
-    type_: ValueKind,
+    kind: ValueKind,
 }
 
 impl Assignment {
-    pub fn new(variable: String, type_: ValueKind, expr: Expr) -> Self {
+    pub fn new(variable: String, kind: ValueKind, expr: Expr) -> Self {
         Assignment {
             variable,
-            type_,
+            kind,
             expr,
         }
     }
 
     pub fn eval(self, scope: &mut Scope) -> Result<Value> {
         let value = self.expr.eval(scope)?;
-        scope.set_variable(self.variable, value, self.type_)?;
+        scope.set_variable(self.variable, value, self.kind)?;
         Ok(Value::Nil)
     }
 }
@@ -190,13 +221,14 @@ impl Expr {
 pub struct Variable {
     defined_in_scope_level: u32,
     name: String,
-    type_: ValueKind,
+    kind: ValueKind,
     value: Value,
 }
 
 #[derive(Debug)]
 pub struct Scope {
     statements: Vec<Stmt>,
+    functions: Rc<Vec<FunctionDeclaration>>,
     variables: Vec<Variable>,
     current_scope_level: u32,
 }
@@ -205,6 +237,7 @@ impl Scope {
     fn new() -> Self {
         Scope {
             statements: Vec::new(),
+            functions: Rc::new(Vec::new()),
             variables: Vec::new(),
             current_scope_level: 0,
         }
@@ -219,26 +252,36 @@ impl Scope {
         Err(format!("Variable '{}' is undefined", variable).into())
     }
 
-    fn set_variable(&mut self, name: String, value: Value, type_: ValueKind) -> Result<Value> {
+    fn set_variable(&mut self, name: String, value: Value, kind: ValueKind) -> Result<Value> {
         if let Some(pos) = self.variables.iter().rev().position(|var| var.name == name) {
-            if self.variables[pos].type_ == type_ {
-                self.variables[pos].value = value;
-                Ok(Value::Nil)
-            } else {
-                Err(format!("Tried setting variable '{:?}' which is of type '{:?}' to a value of type '{:?}'",
-                            self.variables[pos].name,
-                            self.variables[pos].type_,
-                            type_).into())
+            match (self.variables[pos].kind, value) {
+                (ValueKind::Bool, val @ Value::Bool(_)) |
+                (ValueKind::Int, val @ Value::Int32(_)) |
+                (ValueKind::Float, val @ Value::Float32(_)) |
+                (ValueKind::String, val @ Value::String(_)) => {
+                    self.variables[pos].value = val;
+                    Ok(Value::Nil)
+                },
+                value => Err(format!("Tried setting variable '{}' which is of type {:?} \
+                                  with value {:?} which is of type '{:?}'",
+                                 name,
+                                 self.variables[pos].kind,
+                                 value,
+                                 kind).into())
             }
         } else {
             self.variables.push(Variable {
                 defined_in_scope_level: self.current_scope_level,
                 name,
                 value,
-                type_,
+                kind,
             });
             Ok(Value::Nil)
         }
+    }
+
+    fn add_function(&mut self, mut func: FunctionDeclaration) {
+        func.defined_in_scope_level = self.current_scope_level
     }
 
     fn push_scope_level(&mut self) {

@@ -1,6 +1,6 @@
 use std::mem;
 
-use ast::{AbstractSyntaxTree, ArgumentList, Assignment, ArithmeticOp, Expr, Function,
+use ast::{AbstractSyntaxTree, ArgumentList, Assignment, ArithmeticOp, Expr, FunctionDeclaration,
           FunctionCall, LogicOp, Parameter, ParameterList, Stmt, StmtList};
 use builtins::{Value, ValueKind};
 use errors::*;
@@ -60,7 +60,7 @@ impl Parser {
         trace!("Entered statement");
 
         if let Some(function) = self.function_declaration()? {
-            return Ok(Some(Stmt::Function(function)));
+            return Ok(Some(Stmt::FunctionDeclaration(function)));
         }
 
         if let Some(assignment) = self.assignment()? {
@@ -162,7 +162,7 @@ impl Parser {
         Ok(params)
     }
 
-    fn function_declaration(&mut self) -> Result<Option<Function>> {
+    fn function_declaration(&mut self) -> Result<Option<FunctionDeclaration>> {
         trace!("Entered function_declaration");
 
         match self.peek(1) {
@@ -201,8 +201,8 @@ impl Parser {
 
         expect_next!(self, eat_token, Token::CloseBrace);
 
-        let function = Function::new(ident, body, params, return_type);
-        debug!("Function: {:#?}", function);
+        let function = FunctionDeclaration::new(ident, body, params, return_type);
+        debug!("FunctionDeclaration: {:#?}", function);
         Ok(Some(function))
     }
 
