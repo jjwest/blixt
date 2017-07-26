@@ -132,7 +132,7 @@ impl FunctionCall {
     pub fn eval(self, scope: &mut Scope) -> Result<Value> {
         let FunctionCall { name, args } = self;
         let mut evaluated_args = Vec::with_capacity(args.len());
-        
+
         for arg in args {
             evaluated_args.push(arg.eval(scope)?);
         }
@@ -143,16 +143,18 @@ impl FunctionCall {
                     (ValueKind::Bool, &Value::Bool(_)) |
                     (ValueKind::Float, &Value::Float32(_)) |
                     (ValueKind::Int, &Value::Int32(_)) |
-                    (ValueKind::String, &Value::String(_)) => {},
+                    (ValueKind::String, &Value::String(_)) => {}
                     _ => return Err(format!("Parameter '{:?}' is of type {:?}, but received an argument of type {:?}",
                                             param.name,
                                             param.kind,
-                                            arg).into())
+                                            arg).into()),
                 }
             }
             Ok(Value::Nil)
         } else {
-            Err(format!("Tried calling non-defined function '{}'", name).into())
+            Err(
+                format!("Tried calling non-defined function '{}'", name).into(),
+            )
         }
     }
 }
@@ -228,7 +230,7 @@ pub struct Variable {
 #[derive(Debug)]
 pub struct Scope {
     statements: Vec<Stmt>,
-    functions: Rc<Vec<FunctionDeclaration>>,
+    functions: Vec<FunctionDeclaration>,
     variables: Vec<Variable>,
     current_scope_level: u32,
 }
@@ -237,7 +239,7 @@ impl Scope {
     fn new() -> Self {
         Scope {
             statements: Vec::new(),
-            functions: Rc::new(Vec::new()),
+            functions: Vec::new(),
             variables: Vec::new(),
             current_scope_level: 0,
         }
@@ -261,13 +263,17 @@ impl Scope {
                 (ValueKind::String, val @ Value::String(_)) => {
                     self.variables[pos].value = val;
                     Ok(Value::Nil)
-                },
-                value => Err(format!("Tried setting variable '{}' which is of type {:?} \
+                }
+                value => Err(
+                    format!(
+                        "Tried setting variable '{}' which is of type {:?} \
                                   with value {:?} which is of type '{:?}'",
-                                 name,
-                                 self.variables[pos].kind,
-                                 value,
-                                 kind).into())
+                        name,
+                        self.variables[pos].kind,
+                        value,
+                        kind
+                    ).into(),
+                ),
             }
         } else {
             self.variables.push(Variable {

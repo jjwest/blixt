@@ -1,4 +1,5 @@
 use std::mem;
+use std::rc::Rc;
 
 use ast::{AbstractSyntaxTree, ArgumentList, Assignment, ArithmeticOp, Expr, FunctionDeclaration,
           FunctionCall, LogicOp, Parameter, ParameterList, Stmt, StmtList};
@@ -235,8 +236,7 @@ impl Parser {
                     Some(expr) => expr,
                     None => {
                         return Err(
-                            format!("Expected expression, found '{:?}'", self.eat_token())
-                                .into(),
+                            format!("Expected expression, found '{:?}'", self.eat_token()).into(),
                         )
                     }
                 },
@@ -266,8 +266,7 @@ impl Parser {
                     Some(expr) => expr,
                     None => {
                         return Err(
-                            format!("Expected expression, found '{:?}'", self.eat_token())
-                                .into(),
+                            format!("Expected expression, found '{:?}'", self.eat_token()).into(),
                         )
                     }
                 },
@@ -299,8 +298,7 @@ impl Parser {
                     Some(expr) => expr,
                     None => {
                         return Err(
-                            format!("Expected expression, found '{:?}'", self.eat_token())
-                                .into(),
+                            format!("Expected expression, found '{:?}'", self.eat_token()).into(),
                         )
                     }
                 },
@@ -354,7 +352,7 @@ impl Parser {
         if let Some(call) = self.function_call()? {
             return Ok(Some(call));
         }
-        
+
         match self.peek(1) {
             Some(&[Token::OpenParen]) => {
                 self.eat_token();
@@ -365,32 +363,33 @@ impl Parser {
 
                 }
             }
-            Some(&[Token::Ident(_)]) =>
+            Some(&[Token::Ident(_)]) => {
                 match self.eat_token() {
                     Token::Ident(name) => Ok(Some(Box::new(Expr::Ident(name)))),
                     _ => unreachable!(),
-                } ,
+                }
+            }
             Some(&[Token::Integer(value)]) => {
                 self.eat_token();
                 Ok(Some(Box::new(Expr::Value(Value::Int32(value)))))
-            },
+            }
             Some(&[Token::Float(value)]) => {
                 self.eat_token();
                 Ok(Some(Box::new(Expr::Value(Value::Float32(value)))))
-            },
+            }
             Some(&[Token::Bool(value)]) => {
                 self.eat_token();
                 Ok(Some(Box::new(Expr::Value(Value::Bool(value)))))
-            },
+            }
             Some(&[Token::String(_)]) => {
                 match self.eat_token() {
-                    Token::String(value) => Ok(Some(Box::new(Expr::Value(Value::String(value))))),
+                    Token::String(value) => Ok(Some(
+                        Box::new(Expr::Value(Value::String(Rc::new(value)))),
+                    )),
                     _ => unreachable!(),
                 }
-            } ,
-            _ => {
-                Ok(None)
             }
+            _ => Ok(None),
         }
     }
 }

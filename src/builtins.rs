@@ -1,4 +1,5 @@
 use std::fmt;
+use std::rc::Rc;
 
 use errors::*;
 
@@ -16,7 +17,7 @@ pub enum Value {
     Bool(bool),
     Int32(i32),
     Float32(f32),
-    String(String),
+    String(Rc<String>),
     Nil,
 }
 
