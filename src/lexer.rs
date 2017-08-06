@@ -242,7 +242,7 @@ named!(types<Token>,
 
 named!(ident<Token>,
        do_parse!(
-           many0!(multispace) >>
+           opt!(multispace) >>
            init: map!(alpha, |init: &[u8]| init.to_vec()) >>
            result: map_res!(
                fold_many0!(
