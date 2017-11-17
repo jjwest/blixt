@@ -11,7 +11,7 @@ pub struct Scope {
 }
 
 impl Scope {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Scope {
             statements: Vec::new(),
             functions: Vec::new(),
@@ -20,16 +20,16 @@ impl Scope {
         }
     }
 
-    fn get_variable(&self, variable: &str) -> Result<Value> {
+    pub fn get_variable(&self, variable: &str) -> Result<Value> {
         for var in self.variables.iter().rev() {
             if var.name == variable {
                 return Ok(var.value.clone());
             }
         }
-        Err(format!("Variable '{}' is undefined", variable).into())
+        Err(format_err!("Variable '{}' is undefined", variable))
     }
 
-    fn set_variable(&mut self, name: String, value: Value, kind: ValueKind) -> Result<Value> {
+    pub fn set_variable(&mut self, name: String, value: Value, kind: ValueKind) -> Result<Value> {
         if let Some(pos) = self.variables.iter().rev().position(|var| var.name == name) {
             match (self.variables[pos].kind, value) {
                 (ValueKind::Bool, val @ Value::Bool(_)) |
@@ -39,16 +39,14 @@ impl Scope {
                     self.variables[pos].value = val;
                     Ok(Value::Nil)
                 }
-                value => Err(
-                    format!(
-                        "Tried setting variable '{}' which is of type {:?} \
+                value => Err(format_err!(
+                    "Tried setting variable '{}' which is of type {:?} \
                                   with value {:?} which is of type '{:?}'",
-                        name,
-                        self.variables[pos].kind,
-                        value,
-                        kind
-                    ).into(),
-                ),
+                    name,
+                    self.variables[pos].kind,
+                    value,
+                    kind
+                )),
             }
         } else {
             self.variables.push(Variable {
@@ -61,15 +59,15 @@ impl Scope {
         }
     }
 
-    fn add_function(&mut self, mut func: FunctionDeclaration) {
+    pub fn add_function(&mut self, mut func: FunctionDeclaration) {
         func.defined_in_scope_level = self.current_scope_level
     }
 
-    fn push_scope_level(&mut self) {
+    pub fn push_scope_level(&mut self) {
         self.current_scope_level += 1;
     }
 
-    fn pop_scope_level(&mut self) {
+    pub fn pop_scope_level(&mut self) {
         assert!(self.current_scope_level > 0);
 
         let current_scope = self.current_scope_level;

@@ -54,7 +54,7 @@ pub enum Token {
     Return,
     While,
     Print,
-    FunctionDeclaration,
+    Function,
 
     Comment,
     Eof,
@@ -83,17 +83,19 @@ pub fn generate_tokens(mut data: &[u8]) -> Result<Vec<Token>> {
                 token
             }
             IResult::Incomplete(needed) => {
-                return Err(
-                    format!("Incomplete parsing, {:?} bytes missing", needed).into(),
-                )
+                return Err(format_err!(
+                    "Incomplete parsing, {:?} bytes missing",
+                    needed
+                ))
             }
             IResult::Error(_) => {
-                let source = str::from_utf8(data).chain_err(
-                    || "Source file is not valid UTF-8",
+                let source = str::from_utf8(data).map_err(
+                    |_| err_msg("Source is not valid UTF-8"),
                 )?;
-                return Err(
-                    format!("Could not parse '{}'", source.chars().next().unwrap()).into(),
-                );
+                return Err(format_err!(
+                    "Could not parse '{}'",
+                    source.chars().next().unwrap()
+                ));
             } 
         };
 
@@ -197,15 +199,15 @@ named!(keyword<Token>,
                     str::from_utf8
            ),
            |word: &str| match word {
-               "if" => Token::If,
+               "if"      => Token::If,
                "else if" => Token::ElseIf,
-               "else" => Token::Else,
-               "for" => Token::For,
-               "print" => Token::Print,
-               "return" => Token::Return,
-               "fn" => Token::FunctionDeclaration,
-               "while" => Token::While,
-               _ => unreachable!(),
+               "else"    => Token::Else,
+               "for"     => Token::For,
+               "print"   => Token::Print,
+               "return"  => Token::Return,
+               "fn"      => Token::Function,
+               "while"   => Token::While,
+               _         => unreachable!(),
            }
        )
 );
@@ -232,9 +234,9 @@ named!(types<Token>,
            ),
            |word: &str| match word {
                "string" => Token::StringType,
-               "int" => Token::IntType,
-               "float" => Token::FloatType,
-               "bool" => Token::BoolType,
+               "int"    => Token::IntType,
+               "float"  => Token::FloatType,
+               "bool"   => Token::BoolType,
                _ => unreachable!(),
            }
        )
@@ -275,10 +277,10 @@ named!(comp_op<Token>,
                "<=" => Token::LesserEqual,
                ">=" => Token::GreaterEqual,
                "==" => Token::Equal,
-               "<" => Token::Lesser,
-               ">" => Token::Greater,
+               "<"  => Token::Lesser,
+               ">"  => Token::Greater,
                "!=" => Token::NotEqual,
-               _ => unreachable!(),
+               _    => unreachable!(),
            }
        ) 
 );
@@ -352,312 +354,158 @@ named!(floats<Token>,
 mod test {
     use super::*;
 
+    fn assert_parse(source: &[u8], tokens: &[Token]) {
+        let mut remaining = source;
+
+        for token in tokens {
+            let mut result = get_token(remaining);
+            assert!(result.is_done());
+            let (rem, parsed_token) = result.unwrap();
+            remaining = rem;
+            assert_eq!(*token, parsed_token);
+        }
+    }
+
     #[test]
     fn test_file_end() {
-        let source = b"  ";
-        let result = get_token(source);
-        assert!(result.is_done());
-        assert_eq!(Token::Eof, result.unwrap().1);
+        assert_parse(b"  ", &[Token::Eof]);
     }
 
     #[test]
     fn test_parse_sigils() {
-        let source = b" -> ";
-        let result = get_token(source);
-        assert!(result.is_done());
-        assert_eq!(Token::ReturnDeclaration, result.unwrap().1);
+        assert_parse(b" -> ", &[Token::ReturnDeclaration]);
     }
 
     #[test]
     fn test_parse_keyword() {
-        let source = b" if else if else for while fn";
-
-        let mut result = get_token(source);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::If, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::ElseIf, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Else, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::For, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::While, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (_, token) = result.unwrap();
-        assert_eq!(Token::FunctionDeclaration, token);
+        assert_parse(
+            b" if else if else for while fn",
+            &[
+                Token::If,
+                Token::ElseIf,
+                Token::Else,
+                Token::For,
+                Token::While,
+                Token::Function,
+            ],
+        );
     }
 
     #[test]
     fn test_parse_logical_operator() {
-        let source = b" && || ! ";
-
-        let mut result = get_token(source);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::And, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Or, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (_, token) = result.unwrap();
-        assert_eq!(Token::Not, token);
+        assert_parse(b" && || ! ", &[Token::And, Token::Or, Token::Not]);
     }
 
     #[test]
     fn test_parse_types() {
-        let source = b" string int float bool ";
-
-        let mut result = get_token(source);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::StringType, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::IntType, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::FloatType, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (_, token) = result.unwrap();
-        assert_eq!(Token::BoolType, token);
-
+        assert_parse(
+            b" string int float bool ",
+            &[
+                Token::StringType,
+                Token::IntType,
+                Token::FloatType,
+                Token::BoolType,
+            ],
+        );
     }
 
     #[test]
     fn test_parse_delimiter() {
-        let source = b" () [] {} , : ;";
-
-        let mut result = get_token(source);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::OpenParen, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::CloseParen, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::OpenBracket, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::CloseBracket, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::OpenBrace, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::CloseBrace, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Comma, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Colon, token);
-
-        result = get_token(remaining);
-        assert!(result.is_done());
-        let (_, token) = result.unwrap();
-        assert_eq!(Token::SemiColon, token);
+        assert_parse(
+            b" () [] {} , : ;",
+            &[
+                Token::OpenParen,
+                Token::CloseParen,
+                Token::OpenBracket,
+                Token::CloseBracket,
+                Token::OpenBrace,
+                Token::CloseBrace,
+                Token::Comma,
+                Token::Colon,
+                Token::SemiColon,
+            ],
+        );
     }
 
     #[test]
     fn test_parse_ident() {
-        let source = b" name num_rows_10 true";
-        let result = get_token(source);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Ident("name".to_owned()), token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Ident("num_rows_10".to_owned()), token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (_, token) = result.unwrap();
-        assert_ne!(Token::Ident("true".to_string()), token)
+        assert_parse(
+            b" name num_rows_10 true",
+            &[
+                Token::Ident("name".to_owned()),
+                Token::Ident("num_rows_10".to_owned()),
+            ],
+        );
     }
 
     #[test]
     fn test_parse_arithmetic_operator() {
-        let source = b" + - * / %";
-
-        let result = get_token(source);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Plus, token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Minus, token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Asterisk, token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Slash, token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (_, token) = result.unwrap();
-        assert_eq!(Token::Percent, token);
-
+        assert_parse(
+            b" + - * / %",
+            &[
+                Token::Plus,
+                Token::Minus,
+                Token::Asterisk,
+                Token::Slash,
+                Token::Percent,
+            ],
+        );
     }
 
     #[test]
     fn test_parse_string() {
-        let source = b" \"Hello friend\"";
-        let result = get_token(source);
-        assert!(result.is_done());
-        let (_, token) = result.unwrap();
-        assert_eq!(Token::String("Hello friend".to_owned()), token);
+        assert_parse(
+            b" \"Hello friend\"",
+            &[Token::String("Hello friend".to_owned())],
+        );
     }
 
     #[test]
     fn test_parse_int() {
-        let source = b" 457 ";
-        let result = get_token(source);
-        assert!(result.is_done());
-        assert_eq!(Token::Integer(457), result.unwrap().1);
+        assert_parse(b" 457 ", &[Token::Integer(457)]);
     }
 
     #[test]
     fn test_parse_assign_operator() {
-        let source = b" := += -= *= /=";
-
-        let result = get_token(source);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Initialize, token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::AddAssign, token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::SubAssign, token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::MultAssign, token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (_, token) = result.unwrap();
-        assert_eq!(Token::DivAssign, token);
+        assert_parse(
+            b" := += -= *= /=",
+            &[
+                Token::Initialize,
+                Token::AddAssign,
+                Token::SubAssign,
+                Token::MultAssign,
+                Token::DivAssign,
+            ],
+        );
     }
 
     #[test]
     fn test_parse_comparison_operator() {
-        let source = b" < > <= >= == != ";
-
-        let result = get_token(source);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Lesser, token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Greater, token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::LesserEqual, token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::GreaterEqual, token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Equal, token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (_, token) = result.unwrap();
-        assert_eq!(Token::NotEqual, token);
+        assert_parse(
+            b" < > <= >= == != ",
+            &[
+                Token::Lesser,
+                Token::Greater,
+                Token::LesserEqual,
+                Token::GreaterEqual,
+                Token::Equal,
+                Token::NotEqual,
+            ],
+        );
     }
 
     #[test]
     fn test_parse_float32() {
-        let source = b" 457.45";
-        let result = get_token(source);
-        assert!(result.is_done());
-        assert_eq!(Token::Float(457.45), result.unwrap().1);
+        assert_parse(b" 457.45", &[Token::Float(457.45)]);
     }
 
     #[test]
     fn test_parse_comment() {
-        let source = b" // hello there!!\n";
-        let result = get_token(source);
-        assert!(result.is_done());
-        assert_eq!(Token::Comment, result.unwrap().1);
+        assert_parse(b" // hello there!!\n", &[Token::Comment]);
     }
 
     #[test]
     fn test_parse_bool() {
-        let source = b" true false";
-        let result = get_token(source);
-        assert!(result.is_done());
-        let (remaining, token) = result.unwrap();
-        assert_eq!(Token::Bool(true), token);
-
-        let result = get_token(remaining);
-        assert!(result.is_done());
-        let (_, token) = result.unwrap();
-        assert_eq!(Token::Bool(false), token);
+        assert_parse(b" true false", &[Token::Bool(true), Token::Bool(false)]);
     }
 }

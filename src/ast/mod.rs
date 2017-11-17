@@ -76,8 +76,8 @@ impl Stmt {
 
 #[derive(Debug)]
 pub struct Parameter {
-    name: String,
-    kind: ValueKind,
+    pub name: String,
+    pub kind: ValueKind,
 }
 
 impl Parameter {
@@ -125,44 +125,6 @@ pub type ArgumentList = Vec<Expr>;
 pub struct FunctionCall {
     name: String,
     args: ArgumentList,
-}
-
-impl FunctionCall {
-    pub fn new(name: String, args: ArgumentList) -> Self {
-        Self { name, args }
-    }
-
-    pub fn eval(self, scope: &mut Scope) -> Result<Value> {
-        let FunctionCall { name, args } = self;
-        let mut evaluated_args = Vec::with_capacity(args.len());
-
-        for arg in args {
-            evaluated_args.push(arg.eval(scope)?);
-        }
-
-
-        // Check that argument types matches parameters
-        if let Some(func) = scope.functions.iter().find(|func| func.name == name) {
-            for (param, arg) in func.params.iter().zip(evaluated_args.iter()) {
-                match (param.kind, arg) {
-                    (ValueKind::Bool, &Value::Bool(_)) |
-                    (ValueKind::Float, &Value::Float32(_)) |
-                    (ValueKind::Int, &Value::Int32(_)) |
-                    (ValueKind::String, &Value::String(_)) => {}
-                    _ => return Err(format!("Parameter '{:?}' is of type {:?}, but received an argument of type {:?}",
-                                            param.name,
-                                            param.kind,
-                                            arg).into()),
-                }
-            }
-            Ok(Value::Nil)
-        } else {
-            Err(
-                format!("Tried calling non-defined function '{}'", name).into(),
-            )
-        }
-
-    }
 }
 
 #[derive(Debug)]

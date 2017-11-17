@@ -4,25 +4,25 @@
 #![cfg_attr(feature="clippy", plugin(clippy))]
 
 #[macro_use]
-extern crate error_chain;
+extern crate failure;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate nom;
+extern crate nom_locate;
 extern crate pretty_env_logger;
 
 use std::env;
 use std::fs::File;
-use std::io::{BufReader, Read};
-use std::path::Path;
+use std::io::{self, Read};
 
+#[macro_use]
+mod macros;
 mod ast;
 mod builtins;
 mod errors;
-mod lexer;
-#[macro_use]
-mod macros;
 mod parser;
+mod lexer;
 
 use errors::*;
 use parser::Parser;
@@ -32,9 +32,6 @@ fn main() {
 
     if let Err(e) = parse_args().and_then(|src| run(&src)) {
         eprintln!("error: {}", e);
-        for e in e.iter().skip(1) {
-            eprintln!("caused by: {}", e);
-        }
     }
 }
 
@@ -48,16 +45,13 @@ fn run(source: &[u8]) -> Result<()> {
 }
 
 fn parse_args() -> Result<Vec<u8>> {
-    let file_name = env::args().nth(1).ok_or("No file provided")?;
+    let file_name = env::args().nth(1).ok_or(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "No file selected".to_string(),
+    ))?;
 
-    let mut file = BufReader::new(File::open(Path::new(&file_name)).chain_err(
-        || "Could not open file",
-    )?);
-
+    let mut file = File::open(&file_name)?;
     let mut buf = Vec::new();
-    file.read_to_end(&mut buf).chain_err(
-        || "Failed reading from file",
-    )?;
-
+    file.read_to_end(&mut buf)?;
     Ok(buf)
 }

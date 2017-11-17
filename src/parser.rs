@@ -1,8 +1,8 @@
 use std::mem;
 use std::rc::Rc;
 
-use ast::{AbstractSyntaxTree, ArgumentList, Assignment, ArithmeticOp, Expr, FunctionDeclaration,
-          FunctionCall, LogicOp, Parameter, ParameterList, Stmt, StmtList};
+use ast::{AbstractSyntaxTree, ArgumentList, Assignment, ArithmeticOp, Expr, LogicOp, Parameter,
+          ParameterList, Stmt, StmtList};
 use builtins::{Value, ValueKind};
 use errors::*;
 use lexer::Token;
@@ -23,7 +23,7 @@ impl Parser {
         while self.pos < self.tokens.len() {
             syntax_tree.add_stmt(match self.statement()? {
                 Some(stmt) => stmt,
-                None => return Err("Error while parsing".into()),
+                None => return Err(err_msg("Error while parsing")),
             });
         }
         Ok(syntax_tree)
@@ -59,10 +59,6 @@ impl Parser {
 
     fn statement(&mut self) -> Result<Option<Stmt>> {
         trace!("Entered statement");
-
-        if let Some(function) = self.function_declaration()? {
-            return Ok(Some(Stmt::FunctionDeclaration(function)));
-        }
 
         if let Some(assignment) = self.assignment()? {
             return Ok(Some(Stmt::Assignment(assignment)));
@@ -100,9 +96,14 @@ impl Parser {
                     Token::IntType => ValueKind::Int,
                     Token::FloatType => ValueKind::Float,
                     Token::StringType => ValueKind::String,
-                    other => return Err(format!("Expected value type, found '{:?}'", other).into()),
+                    other => return Err(format_err!("Expected value type, found '{:?}'", other)),
                 };
-                expect_next!(self, eat_token, Token::Assign);
+
+                match self.eat_token() {
+                    Token::Assign => {}
+                    other => return Err(format_err!("Expected Token::Assign, found {:?}", other)),
+                }
+
                 type_
             }
             Token::Assign | Token::Initialize => {
@@ -111,15 +112,14 @@ impl Parser {
                     Some(&[Token::Integer(_)]) => ValueKind::Int,
                     Some(&[Token::Float(_)]) => ValueKind::Float,
                     Some(&[Token::String(_)]) => ValueKind::String,
-                    other => {
-                        return Err(format!("Could not infer type, found '{:?}'", other).into())
-                    }
+                    other => return Err(format_err!("Could not infer type, found '{:?}'", other)),
                 }
             }
             other => {
-                return Err(
-                    format!("Expected type or assignment token, found '{:?}'", other).into(),
-                )
+                return Err(format_err!(
+                    "Expected type or assignment token, found '{:?}'",
+                    other
+                ))
             }
         };
 
@@ -143,7 +143,10 @@ impl Parser {
                 _ => unreachable!(),
             };
 
-            expect_next!(self, eat_token, Token::Colon);
+            match self.eat_token() {
+                Token::Assign => {}
+                other => return Err(format_err!("Expected Token::Colon, found {:?}", other)),
+            }
 
             let type_ = match self.eat_token() {
                 Token::BoolType => ValueKind::Bool,
@@ -157,54 +160,14 @@ impl Parser {
                 self.eat_token();
             }
 
-            params.push(Parameter::new(ident, type_));
+
+            params.push(Parameter {
+                name: ident,
+                kind: type_,
+            });
         }
 
         Ok(params)
-    }
-
-    fn function_declaration(&mut self) -> Result<Option<FunctionDeclaration>> {
-        trace!("Entered function_declaration");
-
-        match self.peek(1) {
-            Some(&[Token::FunctionDeclaration]) => {}
-            _ => return Ok(None),
-        }
-
-        expect_next!(self, eat_token, Token::FunctionDeclaration);
-
-        let ident = match self.eat_token() {
-            Token::Ident(ident) => ident,
-            other => expected!("Identifier", other),
-        };
-
-        expect_next!(self, eat_token, Token::OpenParen);
-        let params = self.parameter_list()?;
-        expect_next!(self, eat_token, Token::CloseParen);
-
-        let return_type = if let Some(&[Token::ReturnDeclaration]) = self.peek(1) {
-            self.eat_token();
-            let type_ = match self.eat_token() {
-                Token::BoolType => ValueKind::Bool,
-                Token::FloatType => ValueKind::Float,
-                Token::IntType => ValueKind::Int,
-                Token::StringType => ValueKind::String,
-                other => expected!("Value type", other),
-            };
-            Some(type_)
-        } else {
-            None
-        };
-
-        expect_next!(self, eat_token, Token::OpenBrace);
-
-        let body = self.statement_list()?.expect("Expected function body");
-
-        expect_next!(self, eat_token, Token::CloseBrace);
-
-        let function = FunctionDeclaration::new(ident, body, params, return_type);
-        debug!("FunctionDeclaration: {:#?}", function);
-        Ok(Some(function))
     }
 
     fn expression(&mut self) -> Result<Option<Box<Expr>>> {
@@ -235,9 +198,10 @@ impl Parser {
                 rhs: match self.expression()? {
                     Some(expr) => expr,
                     None => {
-                        return Err(
-                            format!("Expected expression, found '{:?}'", self.eat_token()).into(),
-                        )
+                        return Err(format_err!(
+                            "Expected expression, found '{:?}'",
+                            self.eat_token()
+                        ))
                     }
                 },
                 operator,
@@ -265,9 +229,10 @@ impl Parser {
                 rhs: match self.term()? {
                     Some(expr) => expr,
                     None => {
-                        return Err(
-                            format!("Expected expression, found '{:?}'", self.eat_token()).into(),
-                        )
+                        return Err(format_err!(
+                            "Expected expression, found '{:?}'",
+                            self.eat_token()
+                        ))
                     }
                 },
                 operator,
@@ -297,9 +262,10 @@ impl Parser {
                 rhs: match self.factor()? {
                     Some(expr) => expr,
                     None => {
-                        return Err(
-                            format!("Expected expression, found '{:?}'", self.eat_token()).into(),
-                        )
+                        return Err(format_err!(
+                            "Expected expression, found '{:?}'",
+                            self.eat_token()
+                        ))
                     }
                 },
                 operator,
@@ -323,35 +289,8 @@ impl Parser {
         Ok(list)
     }
 
-    fn function_call(&mut self) -> Result<Option<Box<Expr>>> {
-        trace!("Entered function_call");
-
-        if let Some(&[Token::Ident(_), Token::OpenParen]) = self.peek(2) {
-            let ident = match self.eat_token() {
-                Token::Ident(ident) => ident,
-                other => expected!("Identifier", other),
-            };
-
-            expect_next!(self, eat_token, Token::OpenParen);
-            let args = self.argument_list()?;
-            expect_next!(self, eat_token, Token::CloseParen);
-
-            let call = Box::new(Expr::FunctionCall(FunctionCall::new(ident, args)));
-            debug!("FunctionCall: {:#?}", call);
-
-            Ok(Some(call))
-
-        } else {
-            Ok(None)
-        }
-    }
-
     fn atom(&mut self) -> Result<Option<Box<Expr>>> {
         trace!("Entered atom");
-
-        if let Some(call) = self.function_call()? {
-            return Ok(Some(call));
-        }
 
         match self.peek(1) {
             Some(&[Token::OpenParen]) => {
@@ -359,7 +298,7 @@ impl Parser {
                 let expr = self.expression()?;
                 match self.eat_token() {
                     Token::CloseParen => Ok(expr),
-                    token => Err(format!("Expected ')', found '{:?}'", token).into()),
+                    token => Err(format_err!("Expected ')', found '{:?}'", token)),
 
                 }
             }
