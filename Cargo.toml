@@ -5,9 +5,8 @@ version = "0.1.0"
 [dependencies]
 failure = "0.1.0"
 log = "0.3.8"
-nom = "^3.0"
-nom_locate = "0.1.1"
 pretty_env_logger = "0.1.1"
+failure_derive = "0.1.1"
 
 [dependencies.clippy]
 optional = true

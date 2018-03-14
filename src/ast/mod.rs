@@ -1,10 +1,8 @@
 mod scope;
 
-use std::cell::RefCell;
-use std::rc::Rc;
+use failure;
 
 use builtins::{Value, ValueKind};
-use errors::*;
 use self::scope::Scope;
 
 #[derive(Debug)]
@@ -24,11 +22,6 @@ impl AbstractSyntaxTree {
     pub fn add_stmt(&mut self, stmt: Stmt) {
         self.statements.0.push(stmt);
     }
-
-    pub fn eval(mut self) -> Result<()> {
-        self.statements.eval(&mut self.scope)?;
-        Ok(())
-    }
 }
 
 #[derive(Debug)]
@@ -37,13 +30,6 @@ pub struct StmtList(pub Vec<Stmt>);
 impl StmtList {
     pub fn new() -> Self {
         StmtList(Vec::new())
-    }
-
-    pub fn eval(self, scope: &mut Scope) -> Result<Value> {
-        for stmt in self.0 {
-            stmt.eval(scope)?;
-        }
-        Ok(Value::Nil)
     }
 }
 
@@ -56,23 +42,6 @@ pub enum Stmt {
     ParameterList(ParameterList),
     FunctionDeclaration(FunctionDeclaration),
 }
-
-impl Stmt {
-    pub fn eval(self, scope: &mut Scope) -> Result<Value> {
-        match self {
-            Stmt::Assignment(assignment) => assignment.eval(scope),
-            Stmt::Expr(expr) => expr.eval(scope),
-            Stmt::StmtList(list) => list.eval(scope),
-            Stmt::Return(value) => Ok(value),
-            Stmt::ParameterList(params) => {
-                println!("Params: {:?}", params);
-                Ok(Value::Nil)
-            }
-            Stmt::FunctionDeclaration(_function) => Ok(Value::Nil),
-        }
-    }
-}
-
 
 #[derive(Debug)]
 pub struct Parameter {
@@ -112,11 +81,6 @@ impl FunctionDeclaration {
             defined_in_scope_level: 0,
         }
     }
-
-    pub fn eval(self, scope: &mut Scope) -> Value {
-        scope.add_function(self);
-        Value::Nil
-    }
 }
 
 pub type ArgumentList = Vec<Expr>;
@@ -142,12 +106,6 @@ impl Assignment {
             expr,
         }
     }
-
-    pub fn eval(self, scope: &mut Scope) -> Result<Value> {
-        let value = self.expr.eval(scope)?;
-        scope.set_variable(self.variable, value, self.kind)?;
-        Ok(Value::Nil)
-    }
 }
 
 #[derive(Debug)]
@@ -166,26 +124,6 @@ pub enum Expr {
     FunctionCall(FunctionCall),
     Value(Value),
 }
-
-impl Expr {
-    pub fn eval(self, scope: &Scope) -> Result<Value> {
-        match self {
-            Expr::ArithmeticExpr { operator, lhs, rhs } => {
-                match operator {
-                    ArithmeticOp::Add => lhs.eval(scope)? + rhs.eval(scope)?,
-                    ArithmeticOp::Sub => lhs.eval(scope)? - rhs.eval(scope)?,
-                    ArithmeticOp::Mult => lhs.eval(scope)? * rhs.eval(scope)?,
-                    ArithmeticOp::Div => lhs.eval(scope)? / rhs.eval(scope)?,
-                    ArithmeticOp::Mod => lhs.eval(scope)? % rhs.eval(scope)?,
-                }
-            }
-            Expr::Ident(name) => scope.get_variable(&name),
-            Expr::Value(value) => Ok(value),
-            _ => unimplemented!(),
-        }
-    }
-}
-
 
 #[derive(Debug)]
 pub struct Variable {
