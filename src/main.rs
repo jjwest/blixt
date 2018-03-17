@@ -21,8 +21,6 @@ mod builtins;
 mod parser;
 mod lexer;
 
-use lexer::Lexer;
-
 fn main() {
     pretty_env_logger::init().unwrap();
 
@@ -31,20 +29,19 @@ fn main() {
     }
 }
 
-fn run(source: Vec<u8>) -> Result<(), failure::Error> {
-    let lexer = Lexer::new(source);
-    let tokens = lexer.generate_tokens()?;
-    let program = parser::parse(tokens)?;
+fn run(source: Vec<char>) -> Result<(), failure::Error> {
+    let tokens = lexer::generate_tokens(source)?;
+    let _program = parser::parse(tokens)?;
 
     Ok(())
 }
 
-fn parse_args() -> Result<Vec<u8>, failure::Error> {
+fn parse_args() -> Result<Vec<char>, failure::Error> {
     let file_name = env::args()
         .nth(1)
         .ok_or_else(|| err_msg("Missing file name"))?;
     let mut file = File::open(&file_name)?;
     let mut buf = Vec::new();
     file.read_to_end(&mut buf)?;
-    Ok(buf)
+    Ok(buf.into_iter().map(|byte| byte as char).collect())
 }

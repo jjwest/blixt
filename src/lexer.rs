@@ -1,8 +1,15 @@
 use failure;
 
-use std::iter::Peekable;
-use std::vec::Drain;
 use std::collections::VecDeque;
+use std::iter::Peekable;
+use std::vec::IntoIter;
+
+#[derive(PartialEq)]
+enum LexResult<T, E> {
+    Ok(T),
+    NoMatch,
+    Err(E),
+}
 
 #[derive(Debug, Fail)]
 enum Error {
@@ -28,7 +35,13 @@ enum Error {
 pub struct Token {
     kind: TokenKind,
     line: usize,
-    column: usize,
+    span: Span,
+}
+
+#[derive(Debug)]
+pub struct Span {
+    start: usize,
+    len: usize,
 }
 
 #[derive(Debug, PartialEq)]
@@ -55,11 +68,11 @@ pub enum TokenKind {
     SubAssign,
 
     // Arithmetic operators
+    Add,
+    Sub,
     Mul,
-    Minus,
-    Mod,
-    Plus,
     Div,
+    Mod,
 
     // Delimiters
     CloseBrace,
@@ -84,7 +97,6 @@ pub enum TokenKind {
     Function,
 
     Comment,
-    Eof,
     Ident(String),
     Bool(bool),
     Integer(i32),
@@ -96,85 +108,95 @@ pub enum TokenKind {
     FloatType,
     IntType,
     StringType,
-
-    Consumed,
 }
 
-pub struct Lexer<'a> {
-    source: Vec<u8>,
-    iter: Peekable<Drain<'a, u8>>,
-    tokens: VecDeque<Token>,
+type SourceIterator<'a> = Peekable<IntoIter<char>>;
+
+struct Lexer {
     line: usize,
     column: usize,
+    tokens: VecDeque<Token>,
 }
 
-impl<'a> Lexer<'a> {
-    pub fn new(source: Vec<u8>) -> Self {
-        Lexer {
-            source,
-            iter: source.drain(..).peekable(),
-            tokens: VecDeque::new(),
-            line: 1,
-            column: 1,
-        }
-    }
+pub fn generate_tokens(source: Vec<char>) -> Result<VecDeque<Token>, failure::Error> {
+    let mut lexer = Lexer {
+        line: 1,
+        column: 1,
+        tokens: VecDeque::new(),
+    };
 
-    pub fn generate_tokens(mut self) -> Result<VecDeque<Token>, failure::Error> {
-        while let Some(character) = self.iter.peek() {
-            let character = *character as char;
+    println!("{:?}", source);
+    let mut iter = source.into_iter().peekable();
 
-            if character == '\n' {
+    while let Some(character) = iter.peek() {
+        let mut result = LexResult::NoMatch;
+        while result == LexResult::NoMatch {
+            let result = if *character == '\n' {
                 debug!("Lexed newline");
-                self.line += 1;
-                self.column = 1;
-                self.iter.next().unwrap();
+                lexer.line += 1;
+                lexer.column = 1;
+                iter.next().unwrap();
+                LexResult::Ok(())
             } else if character.is_whitespace() {
-                self.column += 1;
-                self.iter.next().unwrap();
+                lexer.column += 1;
+                iter.next().unwrap();
+                LexResult::Ok(())
             } else if character.is_alphabetic() {
-                self.lex_identifier()?;
-            } else if is_delimiter(character) {
-                self.lex_delimiter()?;
-            } else if is_arithmetic_op(character) {
-                self.lex_arithmetic_op()?;
-            } else if is_logical_op(character) {
-                self.lex_logical_op()?;
-            }
+                lexer.lex_identifier(&mut iter)
+            } else if is_delimiter(*character) {
+                lexer.lex_delimiter(&mut iter)
+            } else if is_arithmetic_op(*character) {
+                lexer.lex_arithmetic_op(&mut iter)
+            } else if is_part_of_logical_op(*character) {
+                lexer.lex_logical_op(&mut iter)
+            } else if is_part_of_sigil(*character) {
+                lexer.lex_sigil(&mut iter)
+            } else {
+                die!("Cannot lex {}", character);
+            };
         }
-
-        Ok(self.tokens)
     }
 
-    fn lex_identifier(&mut self) -> Result<(), Error> {
+    Ok(lexer.tokens)
+}
+
+impl Lexer {
+    fn lex_identifier(&mut self, iter: &mut SourceIterator) -> LexResult<(), Error> {
         debug!("Lexing identifier");
-
         let mut ident = String::new();
+        let start = self.column;
 
-        while let Some(character) = self.iter.peek() {
-            let character = *character as char;
-
-            if character.is_alphanumeric() || character == '_' {
-                ident.push(character);
+        while let Some(character) = iter.peek() {
+            if character.is_alphanumeric() || *character == '_' {
+                ident.push(*character);
                 self.column += 1;
-                self.iter.next().unwrap();
+                iter.next().unwrap();
             } else {
                 break;
             }
         }
 
-        self.tokens.push_back(Token {
+        let token = Token {
             line: self.line,
-            column: self.column,
+            span: Span {
+                start,
+                len: self.column - start,
+            },
             kind: TokenKind::Ident(ident),
-        });
+        };
 
-        Ok(())
+        debug!("LEXED {:?}", token);
+        self.tokens.push_back(token);
+
+        LexResult::Ok(())
     }
 
-    fn lex_delimiter(&mut self) -> Result<(), Error> {
+    fn lex_delimiter(&mut self, iter: &mut SourceIterator) -> LexResult<(), Error> {
         debug!("Lexing delimiter");
 
-        let character = self.iter.next().unwrap() as char;
+        let start = self.column;
+
+        let character = iter.next().unwrap();
         let kind = match character {
             '{' => TokenKind::OpenBrace,
             '}' => TokenKind::CloseBrace,
@@ -186,7 +208,7 @@ impl<'a> Lexer<'a> {
             ':' => TokenKind::Colon,
             ';' => TokenKind::SemiColon,
             _ => {
-                return Err(Error::UnexpectedCharacter {
+                return LexResult::Err(Error::UnexpectedCharacter {
                     ch: character,
                     column: self.column,
                     line: self.line,
@@ -196,27 +218,35 @@ impl<'a> Lexer<'a> {
 
         self.column += 1;
 
-        self.tokens.push_back(Token {
+        let token = Token {
             line: self.line,
-            column: self.column,
+            span: Span {
+                start,
+                len: self.column - start,
+            },
             kind: kind,
-        });
+        };
 
-        Ok(())
+        debug!("LEXED {:?}", token);
+        self.tokens.push_back(token);
+
+        LexResult::Ok(())
     }
 
-    fn lex_arithmetic_op(&mut self) -> Result<Token, Error> {
+    fn lex_arithmetic_op(&mut self, iter: &mut SourceIterator) -> LexResult<(), Error> {
         debug!("Lexing arithmetic operator");
 
-        let character = self.iter.next().unwrap() as char;
+        let start = self.column;
+
+        let character = iter.next().unwrap();
         let kind = match character {
-            '+' => TokenKind::Plus,
-            '-' => TokenKind::Minus,
+            '+' => TokenKind::Add,
+            '-' => TokenKind::Sub,
             '/' => TokenKind::Div,
             '*' => TokenKind::Mul,
             '%' => TokenKind::Mod,
             _ => {
-                return Err(Error::UnexpectedCharacter {
+                return LexResult::Err(Error::UnexpectedCharacter {
                     ch: character,
                     line: self.line,
                     column: self.column,
@@ -226,23 +256,32 @@ impl<'a> Lexer<'a> {
 
         self.column += 1;
 
-        Ok(Token {
+        let token = Token {
             kind: kind,
             line: self.line,
-            column: self.column,
-        })
+            span: Span {
+                start,
+                len: self.column - start,
+            },
+        };
+
+        debug!("LEXED {:?}", token);
+        self.tokens.push_back(token);
+
+        LexResult::Ok(())
     }
 
-    fn lex_logical_op(&mut self) -> Result<Token, Error> {
+    fn lex_logical_op(&mut self, iter: &mut SourceIterator) -> LexResult<(), Error> {
         debug!("Lexing logical operator");
         let mut op = String::new();
+        let start = self.column;
 
-        while let Some(character) = self.iter.peek() {
+        while let Some(character) = iter.peek() {
             let character = *character as char;
 
-            if is_logical_op(character) {
+            if is_part_of_logical_op(character) {
                 op.push(character);
-                self.iter.next().unwrap();
+                iter.next().unwrap();
                 self.column += 1;
             } else {
                 break;
@@ -254,7 +293,7 @@ impl<'a> Lexer<'a> {
             "&&" => TokenKind::And,
             "||" => TokenKind::Or,
             _ => {
-                return Err(Error::UnknownOperator {
+                return LexResult::Err(Error::UnknownOperator {
                     operator: op,
                     line: self.line,
                     column: self.column,
@@ -262,11 +301,58 @@ impl<'a> Lexer<'a> {
             }
         };
 
-        Ok(Token {
+        let token = Token {
             kind,
             line: self.line,
-            column: self.column,
-        })
+            span: Span {
+                start,
+                len: self.column - start,
+            },
+        };
+
+        debug!("LEXED: {:?}", token);
+        self.tokens.push_back(token);
+
+        LexResult::Ok(())
+    }
+
+    fn lex_sigil(&mut self, iter: &mut SourceIterator) -> LexResult<(), Error> {
+        let mut sigil = String::new();
+        let start = self.column;
+
+        while let Some(character) = iter.peek() {
+            if is_part_of_sigil(*character) {
+                sigil.push(*character);
+                self.column += 1;
+            } else {
+                break;
+            }
+        }
+
+        let kind = match sigil.as_str() {
+            "->" => TokenKind::ReturnDeclaration,
+            _ => {
+                return LexResult::Err(Error::UnknownOperator {
+                    line: self.line,
+                    column: self.column,
+                    operator: sigil,
+                })
+            }
+        };
+
+        let token = Token {
+            kind,
+            line: self.line,
+            span: Span {
+                start,
+                len: self.column - start,
+            },
+        };
+
+        debug!("LEXED: {:?}", token);
+        self.tokens.push_back(token);
+
+        LexResult::Ok(())
     }
 }
 
@@ -284,9 +370,16 @@ fn is_arithmetic_op(c: char) -> bool {
     }
 }
 
-fn is_logical_op(c: char) -> bool {
+fn is_part_of_logical_op(c: char) -> bool {
     match c {
         '!' | '&' | '|' => true,
+        _ => false,
+    }
+}
+
+fn is_part_of_sigil(c: char) -> bool {
+    match c {
+        '-' | '>' => true,
         _ => false,
     }
 }
