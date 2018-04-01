@@ -6,6 +6,7 @@ extern crate failure;
 extern crate failure_derive;
 #[macro_use]
 extern crate log;
+extern crate itertools;
 extern crate pretty_env_logger;
 
 use failure::err_msg;
@@ -14,12 +15,9 @@ use std::env;
 use std::fs::File;
 use std::io::Read;
 
-#[macro_use]
-mod macros;
-mod ast;
 mod builtins;
-mod parser;
 mod lexer;
+mod parser;
 
 fn main() {
     pretty_env_logger::init().unwrap();
@@ -31,7 +29,6 @@ fn main() {
 
 fn run(source: Vec<char>) -> Result<(), failure::Error> {
     let tokens = lexer::generate_tokens(source)?;
-    let _program = parser::parse(tokens)?;
 
     Ok(())
 }
@@ -43,5 +40,6 @@ fn parse_args() -> Result<Vec<char>, failure::Error> {
     let mut file = File::open(&file_name)?;
     let mut buf = Vec::new();
     file.read_to_end(&mut buf)?;
+
     Ok(buf.into_iter().map(|byte| byte as char).collect())
 }

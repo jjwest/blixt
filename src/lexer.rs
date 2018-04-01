@@ -1,15 +1,9 @@
 use failure;
+use itertools::{self, Itertools, MultiPeek};
 
 use std::collections::VecDeque;
-use std::iter::Peekable;
+use std::num;
 use std::vec::IntoIter;
-
-#[derive(PartialEq)]
-enum LexResult<T, E> {
-    Ok(T),
-    NoMatch,
-    Err(E),
-}
 
 #[derive(Debug, Fail)]
 enum Error {
@@ -20,15 +14,18 @@ enum Error {
         column: usize,
     },
 
-    #[fail(display = "Unexpected end of file at line {} column {}", line, column)]
-    MissingCharacter { line: usize, column: usize },
-
-    #[fail(display = "Unknown operator '{}' at line {} column {}", operator, line, column)]
-    UnknownOperator {
-        operator: String,
+    #[fail(display = "Unknown thing '{}' at line {} column {}", thing, line, column)]
+    UnknownThing {
+        thing: String,
         line: usize,
         column: usize,
     },
+
+    #[fail(display = "{}", _0)]
+    ParseFloat(#[cause] num::ParseFloatError),
+
+    #[fail(display = "{}", _0)]
+    ParseInt(#[cause] num::ParseIntError),
 }
 
 #[derive(Debug)]
@@ -60,12 +57,12 @@ pub enum TokenKind {
     NotEqual,
 
     // Assign operators
-    Initialize,
-    Assign,
-    AddAssign,
-    DivAssign,
-    MultAssign,
-    SubAssign,
+    _Initialize,
+    _Assign,
+    _AddAssign,
+    _DivAssign,
+    _MultAssign,
+    _SubAssign,
 
     // Arithmetic operators
     Add,
@@ -96,85 +93,84 @@ pub enum TokenKind {
     Print,
     Function,
 
-    Comment,
+    _Comment,
     Ident(String),
-    Bool(bool),
+    _Bool(bool),
     Integer(i32),
     Float(f32),
-    String(String),
+    _String(String),
 
     // Types
-    BoolType,
-    FloatType,
-    IntType,
-    StringType,
+    _BoolType,
+    _FloatType,
+    _IntType,
+    _StringType,
 }
 
-type SourceIterator<'a> = Peekable<IntoIter<char>>;
+type SourceIterator<'a> = MultiPeek<IntoIter<char>>;
 
 struct Lexer {
     line: usize,
     column: usize,
-    tokens: VecDeque<Token>,
 }
 
 pub fn generate_tokens(source: Vec<char>) -> Result<VecDeque<Token>, failure::Error> {
-    let mut lexer = Lexer {
-        line: 1,
-        column: 1,
-        tokens: VecDeque::new(),
-    };
-
-    println!("{:?}", source);
-    let mut iter = source.into_iter().peekable();
+    let mut lexer = Lexer { line: 1, column: 1 };
+    let mut tokens = VecDeque::new();
+    let mut iter = itertools::multipeek(source.into_iter());
 
     while let Some(character) = iter.peek() {
-        let mut result = LexResult::NoMatch;
-        while result == LexResult::NoMatch {
-            let result = if *character == '\n' {
-                debug!("Lexed newline");
-                lexer.line += 1;
-                lexer.column = 1;
-                iter.next().unwrap();
-                LexResult::Ok(())
-            } else if character.is_whitespace() {
-                lexer.column += 1;
-                iter.next().unwrap();
-                LexResult::Ok(())
-            } else if character.is_alphabetic() {
-                lexer.lex_identifier(&mut iter)
-            } else if is_delimiter(*character) {
-                lexer.lex_delimiter(&mut iter)
-            } else if is_arithmetic_op(*character) {
-                lexer.lex_arithmetic_op(&mut iter)
-            } else if is_part_of_logical_op(*character) {
-                lexer.lex_logical_op(&mut iter)
-            } else if is_part_of_sigil(*character) {
-                lexer.lex_sigil(&mut iter)
-            } else {
-                die!("Cannot lex {}", character);
-            };
-        }
+        if *character == '\n' {
+            lexer.line += 1;
+            lexer.column = 1;
+            iter.next().unwrap();
+        } else if character.is_whitespace() {
+            lexer.column += 1;
+            iter.next().unwrap();
+        } else if character.is_alphabetic() {
+            if let Some(token) = lexer.lex_keyword(&mut iter)? {
+                tokens.push_back(token);
+            } else if let Some(token) = lexer.lex_identifier(&mut iter)? {
+                tokens.push_back(token);
+            }
+        } else if character.is_numeric() {
+            tokens.push_back(lexer.lex_numeral(&mut iter)?.unwrap());
+        } else if is_delimiter(*character) {
+            tokens.push_back(lexer.lex_delimiter(&mut iter)?.unwrap());
+        } else if is_arithmetic_op(*character) {
+            tokens.push_back(lexer.lex_arithmetic_op(&mut iter)?.unwrap());
+        } else if is_part_of_logical_op(*character) {
+            tokens.push_back(lexer.lex_logical_op(&mut iter)?.unwrap());
+        } else if is_part_of_sigil(*character) {
+            tokens.push_back(lexer.lex_sigil(&mut iter)?.unwrap());
+        } else {
+            return Err(format_err!("Could not lex {:?}", character));
+        };
     }
 
-    Ok(lexer.tokens)
+    Ok(tokens)
 }
 
 impl Lexer {
-    fn lex_identifier(&mut self, iter: &mut SourceIterator) -> LexResult<(), Error> {
-        debug!("Lexing identifier");
-        let mut ident = String::new();
+    fn lex_identifier(
+        &mut self,
+        iter: &mut SourceIterator,
+    ) -> Result<Option<Token>, failure::Error> {
+        trace!("Lexing identifier");
+
         let start = self.column;
 
+        let mut count = 0;
         while let Some(character) = iter.peek() {
             if character.is_alphanumeric() || *character == '_' {
-                ident.push(*character);
-                self.column += 1;
-                iter.next().unwrap();
+                count += 1;
             } else {
                 break;
             }
         }
+
+        let ident: String = iter.take(count).collect();
+        self.column += count;
 
         let token = Token {
             line: self.line,
@@ -186,13 +182,55 @@ impl Lexer {
         };
 
         debug!("LEXED {:?}", token);
-        self.tokens.push_back(token);
 
-        LexResult::Ok(())
+        Ok(Some(token))
     }
 
-    fn lex_delimiter(&mut self, iter: &mut SourceIterator) -> LexResult<(), Error> {
-        debug!("Lexing delimiter");
+    fn lex_numeral(&mut self, iter: &mut SourceIterator) -> Result<Option<Token>, Error> {
+        trace!("Lexing numeral");
+
+        let start = self.column;
+
+        let is_numeric = |ch: &char| ch.is_numeric();
+        let mut digits: Vec<char> = iter.take_while_ref(is_numeric).collect();
+
+        let mut is_float = false;
+
+        if let Some(character) = iter.peek() {
+            if *character == '.' {
+                is_float = true;
+                iter.next().unwrap();
+                digits.push('.');
+                digits.extend(iter.take_while_ref(is_numeric));
+            }
+        }
+
+        let digits: String = digits.into_iter().collect();
+        self.column += digits.len();
+
+        let kind = if is_float {
+            let digits = digits.parse().map_err(|e| Error::ParseFloat(e))?;
+            TokenKind::Float(digits)
+        } else {
+            let digits = digits.parse().map_err(|e| Error::ParseInt(e))?;
+            TokenKind::Integer(digits)
+        };
+
+        let token = Token {
+            kind,
+            line: self.line,
+            span: Span {
+                start: start,
+                len: digits.len(),
+            },
+        };
+
+        debug!("LEXED {:?}", token);
+        Ok(Some(token))
+    }
+
+    fn lex_delimiter(&mut self, iter: &mut SourceIterator) -> Result<Option<Token>, Error> {
+        trace!("Lexing delimiter");
 
         let start = self.column;
 
@@ -208,7 +246,7 @@ impl Lexer {
             ':' => TokenKind::Colon,
             ';' => TokenKind::SemiColon,
             _ => {
-                return LexResult::Err(Error::UnexpectedCharacter {
+                return Err(Error::UnexpectedCharacter {
                     ch: character,
                     column: self.column,
                     line: self.line,
@@ -228,13 +266,11 @@ impl Lexer {
         };
 
         debug!("LEXED {:?}", token);
-        self.tokens.push_back(token);
-
-        LexResult::Ok(())
+        Ok(Some(token))
     }
 
-    fn lex_arithmetic_op(&mut self, iter: &mut SourceIterator) -> LexResult<(), Error> {
-        debug!("Lexing arithmetic operator");
+    fn lex_arithmetic_op(&mut self, iter: &mut SourceIterator) -> Result<Option<Token>, Error> {
+        trace!("Lexing arithmetic operator");
 
         let start = self.column;
 
@@ -246,7 +282,7 @@ impl Lexer {
             '*' => TokenKind::Mul,
             '%' => TokenKind::Mod,
             _ => {
-                return LexResult::Err(Error::UnexpectedCharacter {
+                return Err(Error::UnexpectedCharacter {
                     ch: character,
                     line: self.line,
                     column: self.column,
@@ -266,35 +302,29 @@ impl Lexer {
         };
 
         debug!("LEXED {:?}", token);
-        self.tokens.push_back(token);
-
-        LexResult::Ok(())
+        Ok(Some(token))
     }
 
-    fn lex_logical_op(&mut self, iter: &mut SourceIterator) -> LexResult<(), Error> {
-        debug!("Lexing logical operator");
-        let mut op = String::new();
+    fn lex_logical_op(&mut self, iter: &mut SourceIterator) -> Result<Option<Token>, Error> {
+        trace!("Lexing logical operator");
+
         let start = self.column;
-
-        while let Some(character) = iter.peek() {
-            let character = *character as char;
-
-            if is_part_of_logical_op(character) {
-                op.push(character);
-                iter.next().unwrap();
-                self.column += 1;
-            } else {
-                break;
-            }
-        }
+        let op: String = iter.take_while_ref(|c| is_part_of_logical_op(*c)).collect();
+        self.column += op.len();
 
         let kind = match op.as_str() {
             "!" => TokenKind::Not,
             "&&" => TokenKind::And,
             "||" => TokenKind::Or,
+            "<=" => TokenKind::LesserEqual,
+            "<" => TokenKind::Lesser,
+            ">=" => TokenKind::GreaterEqual,
+            ">" => TokenKind::Greater,
+            "==" => TokenKind::Equal,
+            "!=" => TokenKind::NotEqual,
             _ => {
-                return LexResult::Err(Error::UnknownOperator {
-                    operator: op,
+                return Err(Error::UnknownThing {
+                    thing: op,
                     line: self.line,
                     column: self.column,
                 })
@@ -310,13 +340,13 @@ impl Lexer {
             },
         };
 
-        debug!("LEXED: {:?}", token);
-        self.tokens.push_back(token);
-
-        LexResult::Ok(())
+        debug!("LEXED {:?}", token);
+        Ok(Some(token))
     }
 
-    fn lex_sigil(&mut self, iter: &mut SourceIterator) -> LexResult<(), Error> {
+    fn lex_sigil(&mut self, iter: &mut SourceIterator) -> Result<Option<Token>, Error> {
+        trace!("Entered lex_sigil");
+
         let mut sigil = String::new();
         let start = self.column;
 
@@ -332,10 +362,10 @@ impl Lexer {
         let kind = match sigil.as_str() {
             "->" => TokenKind::ReturnDeclaration,
             _ => {
-                return LexResult::Err(Error::UnknownOperator {
+                return Err(Error::UnknownThing {
                     line: self.line,
                     column: self.column,
-                    operator: sigil,
+                    thing: sigil,
                 })
             }
         };
@@ -349,32 +379,64 @@ impl Lexer {
             },
         };
 
-        debug!("LEXED: {:?}", token);
-        self.tokens.push_back(token);
+        debug!("LEXED {:?}", token);
 
-        LexResult::Ok(())
+        Ok(Some(token))
+    }
+
+    fn lex_keyword(&mut self, iter: &mut SourceIterator) -> Result<Option<Token>, Error> {
+        trace!("Entered lex_keyword");
+
+        let start = self.column;
+        let mut word = String::new();
+
+        while let Some(character) = iter.peek() {
+            if character.is_alphabetic() {
+                word.push(*character);
+            } else {
+                break;
+            }
+        }
+
+        let kind = match word.as_str() {
+            "if" => TokenKind::If,
+            "else" => TokenKind::Else,
+            "elif" => TokenKind::ElseIf,
+            "return" => TokenKind::Return,
+            "fn" => TokenKind::Function,
+            "for" => TokenKind::For,
+            "while" => TokenKind::While,
+            "print" => TokenKind::Print,
+            _ => return Ok(None),
+        };
+
+        for _ in iter.take(word.len()) {}
+
+        self.column += word.len();
+        let token = Token {
+            kind,
+            line: self.line,
+            span: Span {
+                start,
+                len: self.column - start,
+            },
+        };
+
+        debug!("LEXED {:?}", token);
+        Ok(Some(token))
     }
 }
 
 fn is_delimiter(c: char) -> bool {
-    match c {
-        '{' | '}' | '(' | ')' | '[' | ']' | ',' | ':' | ';' => true,
-        _ => false,
-    }
+    "{}()[],:;".contains(c)
 }
 
 fn is_arithmetic_op(c: char) -> bool {
-    match c {
-        '+' | '-' | '*' | '/' => true,
-        _ => false,
-    }
+    "+-*/".contains(c)
 }
 
 fn is_part_of_logical_op(c: char) -> bool {
-    match c {
-        '!' | '&' | '|' => true,
-        _ => false,
-    }
+    "!&|<>=".contains(c)
 }
 
 fn is_part_of_sigil(c: char) -> bool {
@@ -414,7 +476,7 @@ fn is_part_of_sigil(c: char) -> bool {
 //             Token { kind, .. } if kind == TokenKind::Eof => {
 //                 debug!("Eof");
 //                 break;
-//             },
+//             }
 //             token => {
 //                 debug!("{:?}", token);
 //                 tokens.push_back(token);
@@ -436,8 +498,7 @@ fn is_part_of_sigil(c: char) -> bool {
 // named!(
 //     delimiter<Token>,
 //     do_parse!(
-//         position: position!() >>
-//         kind: map!(ws!(one_of!("(){}[],:;")), |delim: char| match delim {
+//         position: position!() >> kind: map!(ws!(one_of!("(){}[],:;")), |delim: char| match delim {
 //             '{' => TokenKind::OpenBrace,
 //             '}' => TokenKind::CloseBrace,
 //             '(' => TokenKind::OpenParen,
@@ -448,35 +509,33 @@ fn is_part_of_sigil(c: char) -> bool {
 //             ':' => TokenKind::Colon,
 //             ';' => TokenKind::SemiColon,
 //             _ => unreachable!(),
-//         }) >>
-//             ({
-//                 let position: Span = position.parse_to().unwrap();
-//                 Token { kind, line: position.line, col: position.offset }
-//             })
+//         }) >> ({
+//             let position: Span = position.parse_to().unwrap();
+//             Token {
+//                 kind,
+//                 line: position.line,
+//                 col: position.offset,
+//             }
+//         })
 //     )
 // );
 
 // named!(
 //     sigils<Token>,
-//     do_parse!(
-//         kind: ws!(tag!("->")) >>
-//         position: position!() >>
-//         (Token { kind, position }))
+//     do_parse!(kind: ws!(tag!("->")) >> position: position!() >> (Token { kind, position }))
 // );
 
 // named!(
 //     arith_op<Token>,
 //     do_parse!(
 //         kind: map!(ws!(one_of!("+-*/%")), |delim: char| match delim {
-//         '+' => TokenKind::Plus,
-//         '-' => TokenKind::Minus,
-//         '*' => TokenKind::Mul,
-//         '/' => TokenKind::Div,
-//         '%' => TokenKind::Percent,
-//         _ => unreachable!(),
-//         }) >>
-//         position: position!() >>
-//         (Token { kind, position})
+//             '+' => TokenKind::Plus,
+//             '-' => TokenKind::Minus,
+//             '*' => TokenKind::Mul,
+//             '/' => TokenKind::Div,
+//             '%' => TokenKind::Percent,
+//             _ => unreachable!(),
+//         }) >> position: position!() >> (Token { kind, position })
 //     )
 // );
 
@@ -484,18 +543,17 @@ fn is_part_of_sigil(c: char) -> bool {
 //     logical_op<Token>,
 //     do_parse!(
 //         kind: map!(
-//         map_res!(
-//             ws!(alt!(tag!("&&") | tag!("||") | tag!("!"))),
-//             str::from_utf8
-//         ),
-//         |op: &str| match op {
-//             "&&" => TokenKind::And,
-//             "||" => TokenKind::Or,
-//             "!" => TokenKind::Not,
-//             _ => unreachable!(),
-//         }) >>
-//         position: position!() >>
-//         (Token { kind, position })
+//             map_res!(
+//                 ws!(alt!(tag!("&&") | tag!("||") | tag!("!"))),
+//                 str::from_utf8
+//             ),
+//             |op: &str| match op {
+//                 "&&" => TokenKind::And,
+//                 "||" => TokenKind::Or,
+//                 "!" => TokenKind::Not,
+//                 _ => unreachable!(),
+//             }
+//         ) >> position: position!() >> (Token { kind, position })
 //     )
 // );
 
@@ -520,9 +578,8 @@ fn is_part_of_sigil(c: char) -> bool {
 //                 "fn" => TokenKind::Function,
 //                 "while" => TokenKind::While,
 //                 _ => unreachable!(),
-//             }) >>
-//         position: position!() >>
-//         (Token { kind, position })
+//             }
+//         ) >> position: position!() >> (Token { kind, position })
 //     )
 // );
 
@@ -535,9 +592,8 @@ fn is_part_of_sigil(c: char) -> bool {
 //                 "true" => TokenKind::Bool(true),
 //                 "false" => TokenKind::Bool(false),
 //                 _ => unreachable!(),
-//             }) >>
-//          position: position!() >>
-//          (Token { kind, position })
+//             }
+//         ) >> position: position!() >> (Token { kind, position })
 //     )
 // );
 
@@ -557,9 +613,8 @@ fn is_part_of_sigil(c: char) -> bool {
 //                 "float" => TokenKind::FloatType,
 //                 "bool" => TokenKind::BoolType,
 //                 _ => unreachable!(),
-//             }) >>
-//         position: position!() >>
-//         (Token { kind, position })
+//             }
+//         ) >> position: position!() >> (Token { kind, position })
 //     )
 // );
 
@@ -578,9 +633,10 @@ fn is_part_of_sigil(c: char) -> bool {
 //                         }
 //                     ),
 //                     String::from_utf8
-//                 ) >>
-//             position: position!() >>
-//             (Token { kind: TokenKind::Ident(result), position })
+//                 ) >> position: position!() >> (Token {
+//             kind: TokenKind::Ident(result),
+//             position
+//         })
 //     )
 // );
 
@@ -602,9 +658,8 @@ fn is_part_of_sigil(c: char) -> bool {
 //                 ">" => TokenKind::Greater,
 //                 "!=" => TokenKind::NotEqual,
 //                 _ => unreachable!(),
-//             }) >>
-//         position: position!() >>
-//         (Token { kind, position })
+//             }
+//         ) >> position: position!() >> (Token { kind, position })
 //     )
 // );
 
@@ -618,9 +673,10 @@ fn is_part_of_sigil(c: char) -> bool {
 //                     |array: &[u8]| array.to_vec()
 //                 ),
 //                 String::from_utf8
-//             ) >>
-//             position: position!() >>
-//             (Token { kind: TokenKind::String(string), position })
+//             ) >> position: position!() >> (Token {
+//             kind: TokenKind::String(string),
+//             position
+//         })
 //     )
 // );
 
@@ -642,42 +698,50 @@ fn is_part_of_sigil(c: char) -> bool {
 //                 "/=" => TokenKind::DivAssign,
 //                 "=" => TokenKind::Assign,
 //                 _ => unreachable!(),
-//             }) >>
-//         position: position!() >>
-//         (Token { kind, position })
+//             }
+//         ) >> position: position!() >> (Token { kind, position })
 //     )
 // );
 
 // named!(
 //     file_end<Token>,
 //     do_parse!(
-//         ws!(eof!()) >>
-//         position: position!() >>
-//         (Token {kind: TokenKind::Eof, position}))
+//         ws!(eof!()) >> position: position!() >> (Token {
+//             kind: TokenKind::Eof,
+//             position
+//         })
+//     )
 // );
 
 // named!(
 //     comment<Token>,
-//     do_parse!(preceded!(ws!(tag!("//")), not_line_ending) >>
-//               position: position!() >>
-//               (Token { kind: TokenKind::Comment, position }))
+//     do_parse!(
+//         preceded!(ws!(tag!("//")), not_line_ending) >> position: position!() >> (Token {
+//             kind: TokenKind::Comment,
+//             position
+//         })
+//     )
 // );
 
 // named!(
 //     integer<Token>,
 //     do_parse!(
-//         as_digit: map_res!(map_res!(ws!(digit), str::from_utf8), str::parse) >>
-//         position: position!() >>
-//         (Token { kind: TokenKind::Integer(as_digit), position })
+//         as_digit: map_res!(map_res!(ws!(digit), str::from_utf8), str::parse)
+//             >> position: position!() >> (Token {
+//             kind: TokenKind::Integer(as_digit),
+//             position
+//         })
 //     )
 // );
 
 // named!(
 //     floats<Token>,
 //     do_parse!(
-//         as_digit: ws!(float) >>
-//         position: position!() >>
-//         (Token { kind: TokenKind::Float(as_digit), position }))
+//         as_digit: ws!(float) >> position: position!() >> (Token {
+//             kind: TokenKind::Float(as_digit),
+//             position
+//         })
+//     )
 // );
 
 // #[cfg(test)]
