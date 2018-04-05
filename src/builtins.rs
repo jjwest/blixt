@@ -1,5 +1,3 @@
-use failure::{self, err_msg};
-
 use std::fmt;
 use std::rc::Rc;
 
