@@ -200,6 +200,12 @@ impl<'a> Iterator for Lexer<'a> {
                 let operator: String = self.source.take_while_ref(|ch| is_operator(*ch)).collect();
                 self.column += operator.len();
 
+                if operator == "//" {
+                    let _ = self.source.take_while_ref(|c| *c != '\n');
+                    self.source.next().unwrap();
+                    return self.next();
+                }
+
                 let kind = match operator.as_str() {
                     "&&" => TokenKind::And,
                     "||" => TokenKind::Or,
@@ -285,28 +291,6 @@ impl<'a> Iterator for Lexer<'a> {
                     },
                 }))
             }
-            '/' => {
-                self.source.next();
-                if let Some(character) = self.source.peek() {
-                    if *character == '/' {
-                        for _ in self.source.take_while_ref(|c| *c != '\n') {}
-                    } else {
-                        let token: String =
-                            self.source.take_while_ref(|c| !c.is_whitespace()).collect();
-
-                        return Some(Err(Error {
-                            line: self.line,
-                            span: Span {
-                                start,
-                                len: token.len() + 1,
-                            },
-                            message: format!("Unknown token '/{}'", token),
-                        }));
-                    }
-                }
-
-                self.next()
-            }
             '\0' => None,
             _ => Some(Err(Error {
                 line: self.line,
@@ -322,12 +306,10 @@ impl<'a> Iterator for Lexer<'a> {
     }
 }
 
-#[inline]
 fn is_operator(ch: char) -> bool {
     "+-*<>=!&|:/%".contains(ch)
 }
 
-#[inline]
 fn is_delimiter(ch: char) -> bool {
     "(){}[]:,;".contains(ch)
 }
@@ -351,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_keywords() {
+    fn test_lex_keywords() {
         assert_lex(
             b"if else for return while fn",
             &[
@@ -366,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_binary_operators() {
+    fn test_lex_binary_operators() {
         assert_lex(
             b"== > >= < <= !=",
             &[
@@ -381,7 +363,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_assignment() {
+    fn test_lex_assignment_operator() {
         assert_lex(
             b"= := += -= *= /= %=",
             &[
@@ -396,4 +378,17 @@ mod tests {
         )
     }
 
+    #[test]
+    fn test_lex_assignment() {
+        assert_lex(
+            b"age: int = 27",
+            &[
+                TokenKind::Ident("age".to_owned()),
+                TokenKind::Colon,
+                TokenKind::IntType,
+                TokenKind::Assign,
+                TokenKind::Integer(27),
+            ],
+        )
+    }
 }
