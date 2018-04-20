@@ -43,13 +43,15 @@ pub enum TokenKind {
     NotEqual,
 
     // Assign operators
-    Initialize,
     Assign,
     AddAssign,
     DivAssign,
     MulAssign,
     SubAssign,
     ModAssign,
+
+    // Declarations
+    VarDecl,
 
     // Arithmetic operators
     Add,
@@ -66,7 +68,7 @@ pub enum TokenKind {
     SemiColon,
     Colon,
 
-    // ReturnDeclaration,
+    ReturnDecl,
     OpenBrace,
     OpenBracket,
     OpenParen,
@@ -77,7 +79,7 @@ pub enum TokenKind {
     For,
     Return,
     While,
-    Function,
+    FunctionDecl,
 
     Ident(String),
     Bool(bool),
@@ -147,7 +149,7 @@ impl<'a> Iterator for Lexer<'a> {
                     "else" => TokenKind::Else,
                     "for" => TokenKind::For,
                     "while" => TokenKind::While,
-                    "fn" => TokenKind::Function,
+                    "fn" => TokenKind::FunctionDecl,
                     "return" => TokenKind::Return,
                     "string" => TokenKind::StringType,
                     "float" => TokenKind::FloatType,
@@ -201,9 +203,19 @@ impl<'a> Iterator for Lexer<'a> {
                 self.column += operator.len();
 
                 if operator == "//" {
-                    let _ = self.source.take_while_ref(|c| *c != '\n');
-                    self.source.next().unwrap();
+                    let _: Vec<_> = self.source.take_while_ref(|c| *c != '\n').collect();
                     return self.next();
+                }
+
+                if operator == "->" {
+                    return Some(Ok(Token {
+                        kind: TokenKind::ReturnDecl,
+                        line: self.line,
+                        span: Span {
+                            start,
+                            len: self.column - start,
+                        },
+                    }));
                 }
 
                 let kind = match operator.as_str() {
@@ -218,7 +230,7 @@ impl<'a> Iterator for Lexer<'a> {
                     "*=" => TokenKind::MulAssign,
                     "/=" => TokenKind::DivAssign,
                     "%=" => TokenKind::ModAssign,
-                    ":=" => TokenKind::Initialize,
+                    ":=" => TokenKind::VarDecl,
                     "=" => TokenKind::Assign,
                     ">" => TokenKind::Greater,
                     "<" => TokenKind::Lesser,
@@ -365,10 +377,9 @@ mod tests {
     #[test]
     fn test_lex_assignment_operator() {
         assert_lex(
-            b"= := += -= *= /= %=",
+            b"= += -= *= /= %=",
             &[
                 TokenKind::Assign,
-                TokenKind::Initialize,
                 TokenKind::AddAssign,
                 TokenKind::SubAssign,
                 TokenKind::MulAssign,
@@ -388,6 +399,17 @@ mod tests {
                 TokenKind::IntType,
                 TokenKind::Assign,
                 TokenKind::Integer(27),
+            ],
+        )
+    }
+
+    #[test]
+    fn test_lex_comment() {
+        assert_lex(
+            b"hello // there friend\no",
+            &[
+                TokenKind::Ident("hello".to_owned()),
+                TokenKind::Ident("o".to_owned()),
             ],
         )
     }

@@ -2,8 +2,22 @@
 
 3434
 
-name = "Jonas"
+name := "Jonas"
+age: float = 32
 
-if name
+if true {
+   name := "Jonas"
+   age := 28
+} else if 3 < 5 {
+   hej := 29
+} else {
+   msg := "Hello"
+}
 
-23.823 2
+
+fn do_cool_things(name: string) -> string {
+   things := name
+   return things
+}
+
+do_cool_things(name)
