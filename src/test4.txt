@@ -1,3 +1,27 @@
 if 5 > 4 && true || false {
    name := 20
 }
+
+fn test_things_works() -> int {
+   num := 5
+   {
+        num += 5
+   }
+
+   return num
+}
+
+
+test_things_works()
+
+// fn test_things_dont_work() -> int {
+//    num := 5
+//    {
+//         age = 5
+//    }
+
+//    return num
+// }
+
+number := 5
+number += 4

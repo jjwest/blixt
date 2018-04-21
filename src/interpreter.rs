@@ -1,5 +1,5 @@
-use ast::{Assignment, BinaryOp, BinaryOpKind, Decl, Expr, FunctionCall, FunctionDecl, If, Stmt,
-          StmtList, UnaryOp, UnaryOpKind};
+use ast::{Assignment, AssignmentKind, BinaryOp, BinaryOpKind, Decl, Expr, FunctionCall,
+          FunctionDecl, If, Stmt, StmtList, UnaryOp, UnaryOpKind};
 use builtins::Value;
 use traits::{AstVisitor, Visitable};
 
@@ -185,7 +185,6 @@ impl AstVisitor for Interpreter {
                     a, b
                 ),
             },
-            _ => unimplemented!(),
         }
     }
 
@@ -274,12 +273,22 @@ impl AstVisitor for Interpreter {
     }
 
     fn visit_assignment(&mut self, node: &mut Assignment) -> Value {
+        trace!("Visit assignment");
+
         let value = node.value.accept(self);
         let var = self.curr_scope()
             .get_variable_mut(&node.ident)
             .expect(&format!("Unknown ident {}", node.ident));
 
-        *var = value;
+        match node.op {
+            AssignmentKind::Regular => *var = value,
+            AssignmentKind::Add => *var += value,
+            AssignmentKind::Sub => *var -= value,
+            AssignmentKind::Mul => *var *= value,
+            AssignmentKind::Div => *var /= value,
+            AssignmentKind::Mod => *var %= value,
+        }
+
         Value::Nil
     }
 }

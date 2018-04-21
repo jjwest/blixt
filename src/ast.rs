@@ -38,6 +38,17 @@ pub enum Expr {
 pub struct Assignment {
     pub ident: String,
     pub value: Expr,
+    pub op: AssignmentKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum AssignmentKind {
+    Regular,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
 }
 
 #[derive(Debug, Clone)]
@@ -75,13 +86,6 @@ pub enum BinaryOpKind {
     Mul,
     Div,
     Mod,
-
-    Assign,
-    AddAssign,
-    DivAssign,
-    MulAssign,
-    SubAssign,
-    ModAssign,
 }
 
 #[derive(Debug, Clone)]
@@ -154,7 +158,6 @@ impl Visitable for Stmt {
             Stmt::Expr(a) => visitor.visit_expr(a),
             Stmt::If(a) => visitor.visit_if_stmt(a),
             Stmt::Return(a) => visitor.visit_return_stmt(a.as_mut()),
-            _ => Value::Nil,
         }
     }
 }

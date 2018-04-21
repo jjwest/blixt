@@ -1,5 +1,5 @@
 use std::fmt;
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Rem, RemAssign, Sub, SubAssign};
 use std::rc::Rc;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -53,6 +53,16 @@ impl Add for Value {
     }
 }
 
+impl AddAssign for Value {
+    fn add_assign(&mut self, other: Value) {
+        match (self, other) {
+            (Value::Int(a), Value::Int(b)) => *a = *a + b,
+            (Value::Float(a), Value::Float(b)) => *a = *a + b,
+            (a, b) => panic!("Cannot add a {:?} with a {:?}", a, b),
+        }
+    }
+}
+
 impl Sub for Value {
     type Output = Value;
     fn sub(self, other: Value) -> Self::Output {
@@ -62,6 +72,16 @@ impl Sub for Value {
             (Value::Int(a), Value::Float(b)) => Value::Float(a as f32 - b),
             (Value::Float(a), Value::Int(b)) => Value::Float(a - b as f32),
             (a, b) => panic!("Cannot sub a {:?} with a {:?}", a, b),
+        }
+    }
+}
+
+impl SubAssign for Value {
+    fn sub_assign(&mut self, other: Value) {
+        match (self, other) {
+            (Value::Int(a), Value::Int(b)) => *a = *a - b,
+            (Value::Float(a), Value::Float(b)) => *a = *a - b,
+            (a, b) => panic!("Cannot add a {:?} with a {:?}", a, b),
         }
     }
 }
@@ -79,6 +99,16 @@ impl Mul for Value {
     }
 }
 
+impl MulAssign for Value {
+    fn mul_assign(&mut self, other: Value) {
+        match (self, other) {
+            (Value::Int(a), Value::Int(b)) => *a = *a * b,
+            (Value::Float(a), Value::Float(b)) => *a = *a * b,
+            (a, b) => panic!("Cannot add a {:?} with a {:?}", a, b),
+        }
+    }
+}
+
 impl Div for Value {
     type Output = Value;
     fn div(self, other: Value) -> Self::Output {
@@ -92,6 +122,16 @@ impl Div for Value {
     }
 }
 
+impl DivAssign for Value {
+    fn div_assign(&mut self, other: Value) {
+        match (self, other) {
+            (Value::Int(a), Value::Int(b)) => *a = *a / b,
+            (Value::Float(a), Value::Float(b)) => *a = *a / b,
+            (a, b) => panic!("Cannot add a {:?} with a {:?}", a, b),
+        }
+    }
+}
+
 impl Rem for Value {
     type Output = Value;
     fn rem(self, other: Value) -> Self::Output {
@@ -101,6 +141,16 @@ impl Rem for Value {
             (Value::Int(a), Value::Float(b)) => Value::Float(a as f32 % b),
             (Value::Float(a), Value::Int(b)) => Value::Float(a % b as f32),
             (a, b) => panic!("Cannot rem a {:?} with a {:?}", a, b),
+        }
+    }
+}
+
+impl RemAssign for Value {
+    fn rem_assign(&mut self, other: Value) {
+        match (self, other) {
+            (Value::Int(a), Value::Int(b)) => *a = *a % b,
+            (Value::Float(a), Value::Float(b)) => *a = *a % b,
+            (a, b) => panic!("Cannot add a {:?} with a {:?}", a, b),
         }
     }
 }

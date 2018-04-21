@@ -48,7 +48,7 @@ fn main() {
         process::exit(1);
     });
 
-    println!("{:#?}", ast);
+    debug!("{:#?}", ast);
     info!("START INTERPRET");
     let mut interp = Interpreter::new();
     ast.accept(&mut interp);

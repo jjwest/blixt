@@ -1,7 +1,8 @@
 use failure;
 
-use ast::{ArgList, Assignment, Ast, BinaryOp, BinaryOpKind, Decl, Expr, FunctionCall,
-          FunctionDecl, If, Param, ParamList, Stmt, UnaryOp, UnaryOpKind, ValueKind, VarDecl};
+use ast::{ArgList, Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr,
+          FunctionCall, FunctionDecl, If, Param, ParamList, Stmt, UnaryOp, UnaryOpKind, ValueKind,
+          VarDecl};
 use lexer::{Token, TokenKind};
 
 use std::collections::VecDeque;
@@ -141,6 +142,15 @@ fn parameter_list(tokens: &mut VecDeque<Token>) -> ParamList {
     let mut params = ParamList::new();
 
     loop {
+        match tokens.get(0).map(|tok| &tok.kind) {
+            Some(TokenKind::Ident(_)) => {}
+            Some(TokenKind::CloseParen) => {
+                tokens.pop_front().unwrap();
+                break;
+            }
+            _ => unreachable!(),
+        }
+
         let name = ident(tokens).expect("Expected ident");
         expect(tokens, TokenKind::Colon);
 
@@ -235,7 +245,6 @@ fn if_statement(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
         tokens.pop_front().unwrap();
 
         let cond = expression(tokens).expect("Expected expression after if");
-        println!("IF COND: {:?}", cond);
         expect(tokens, TokenKind::OpenBrace);
         let body = statement_list(tokens);
         expect(tokens, TokenKind::CloseBrace);
@@ -289,12 +298,12 @@ fn assignment(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
     };
 
     let op = match tokens.get(1).map(|tok| &tok.kind) {
-        Some(TokenKind::Assign) => BinaryOpKind::Assign,
-        Some(TokenKind::AddAssign) => BinaryOpKind::AddAssign,
-        Some(TokenKind::SubAssign) => BinaryOpKind::SubAssign,
-        Some(TokenKind::MulAssign) => BinaryOpKind::MulAssign,
-        Some(TokenKind::DivAssign) => BinaryOpKind::DivAssign,
-        Some(TokenKind::ModAssign) => BinaryOpKind::ModAssign,
+        Some(TokenKind::Assign) => AssignmentKind::Regular,
+        Some(TokenKind::AddAssign) => AssignmentKind::Add,
+        Some(TokenKind::SubAssign) => AssignmentKind::Sub,
+        Some(TokenKind::MulAssign) => AssignmentKind::Mul,
+        Some(TokenKind::DivAssign) => AssignmentKind::Div,
+        Some(TokenKind::ModAssign) => AssignmentKind::Mod,
         _ => return None,
     };
 
@@ -302,7 +311,7 @@ fn assignment(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
     tokens.pop_front().unwrap();
     let value = expression(tokens).expect("Missing expr after assignment");
 
-    Some(Stmt::Assignment(Assignment { ident, value }))
+    Some(Stmt::Assignment(Assignment { ident, value, op }))
 }
 
 fn expression(tokens: &mut VecDeque<Token>) -> Option<Expr> {
