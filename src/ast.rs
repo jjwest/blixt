@@ -1,3 +1,8 @@
+use builtins::Value;
+use traits::{AstVisitor, Visitable};
+
+use std::rc::Rc;
+
 pub type StmtList = Vec<Stmt>;
 pub type ParamList = Vec<Param>;
 pub type ArgList = Vec<Expr>;
@@ -7,21 +12,21 @@ pub struct Ast {
     pub statements: StmtList,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Stmt {
     Assignment(BinaryOp),
     Block(StmtList),
     Decl(Decl),
     Expr(Expr),
     If(If),
-    Return,
+    Return(Option<Expr>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Float(f32),
     Integer(i32),
-    StringLiteral(String),
+    StringLiteral(Rc<String>),
     Ident(String),
     Bool(bool),
     UnaryOp(UnaryOp),
@@ -29,27 +34,26 @@ pub enum Expr {
     FunctionCall(FunctionCall),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnaryOp {
-    pub lhs: Box<Expr>,
-    pub rhs: Box<Expr>,
+    pub item: Box<Expr>,
     pub op: UnaryOpKind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum UnaryOpKind {
     Not,
-    Minus,
+    Neg,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BinaryOp {
     pub lhs: Box<Expr>,
     pub rhs: Box<Expr>,
     pub op: BinaryOpKind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum BinaryOpKind {
     And,
     Or,
@@ -74,22 +78,28 @@ pub enum BinaryOpKind {
     ModAssign,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Decl {
-    Variable {
-        name: String,
-        value: Expr,
-        kind: ValueKind,
-    },
-    Function {
-        name: String,
-        body: StmtList,
-        params: Vec<Param>,
-        return_type: Option<ValueKind>,
-    },
+    Variable(VarDecl),
+    Function(FunctionDecl),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone)]
+pub struct VarDecl {
+    pub name: String,
+    pub value: Expr,
+    pub kind: ValueKind,
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionDecl {
+    pub name: String,
+    pub body: StmtList,
+    pub params: Vec<Param>,
+    pub return_type: Option<ValueKind>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ValueKind {
     Bool,
     String,
@@ -98,21 +108,85 @@ pub enum ValueKind {
     Undecided,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct If {
     pub cond: Expr,
     pub body: StmtList,
     pub else_body: Option<Box<Stmt>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Param {
     pub name: String,
     pub kind: ValueKind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionCall {
     pub name: String,
     pub args: Vec<Expr>,
+}
+
+impl Visitable for Ast {
+    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+        self.statements.accept(visitor)
+    }
+}
+
+impl Visitable for StmtList {
+    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+        visitor.visit_stmt_list(self)
+    }
+}
+
+impl Visitable for Stmt {
+    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+        match self {
+            Stmt::Assignment(a) => visitor.visit_binary_op(a),
+            // Block(a) => a.accept(visitor),
+            Stmt::Decl(a) => visitor.visit_decl(a),
+            Stmt::Expr(a) => visitor.visit_expr(a),
+            Stmt::If(a) => visitor.visit_if_stmt(a),
+            Stmt::Return(a) => visitor.visit_return_stmt(a.as_mut()),
+            _ => Value::Nil,
+        }
+    }
+}
+
+impl Visitable for Expr {
+    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+        visitor.visit_expr(self)
+    }
+}
+
+impl Visitable for BinaryOp {
+    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+        visitor.visit_binary_op(self)
+    }
+}
+
+impl Visitable for UnaryOp {
+    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+        visitor.visit_unary_op(self)
+    }
+}
+
+impl Visitable for Decl {
+    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+        let result = visitor.visit_decl(self);
+        println!("DECL: {:#?}", result);
+        result
+    }
+}
+
+impl Visitable for FunctionCall {
+    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+        visitor.visit_funcall(self)
+    }
+}
+
+impl Visitable for If {
+    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+        visitor.visit_if_stmt(self)
+    }
 }

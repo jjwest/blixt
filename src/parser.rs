@@ -1,10 +1,17 @@
 use failure;
 
-use ast::{ArgList, Ast, BinaryOp, BinaryOpKind, Decl, Expr, FunctionCall, If, Param, ParamList,
-          Stmt, ValueKind};
+use ast::{ArgList, Ast, BinaryOp, BinaryOpKind, Decl, Expr, FunctionCall, FunctionDecl, If, Param,
+          ParamList, Stmt, ValueKind, VarDecl};
 use lexer::{Token, TokenKind};
 
 use std::collections::VecDeque;
+use std::rc::Rc;
+
+pub fn parse_ast(mut tokens: VecDeque<Token>) -> Result<Ast, failure::Error> {
+    let statements = statement_list(&mut tokens);
+
+    Ok(Ast { statements })
+}
 
 fn expect(tokens: &mut VecDeque<Token>, kind: TokenKind) {
     if let Some(token) = tokens.pop_front() {
@@ -16,14 +23,8 @@ fn expect(tokens: &mut VecDeque<Token>, kind: TokenKind) {
     }
 }
 
-pub fn parse_ast(mut tokens: VecDeque<Token>) -> Result<Ast, failure::Error> {
-    let statements = statement_list(&mut tokens);
-
-    Ok(Ast { statements })
-}
-
 fn statement_list(tokens: &mut VecDeque<Token>) -> Vec<Stmt> {
-    trace!("Enteted statement_list");
+    trace!("Entered statement_list");
 
     let mut stmts = Vec::new();
     while let Some(stmt) = statement(tokens) {
@@ -90,11 +91,11 @@ fn declaration(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
 
     let value = expression(tokens).expect("Variable decl expected expression");
 
-    Some(Stmt::Decl(Decl::Variable {
+    Some(Stmt::Decl(Decl::Variable(VarDecl {
         name: ident,
         value,
         kind: var_type,
-    }))
+    })))
 }
 
 fn function_decl(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
@@ -126,12 +127,12 @@ fn function_decl(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
     let body = statement_list(tokens);
     expect(tokens, TokenKind::CloseBrace);
 
-    Some(Stmt::Decl(Decl::Function {
+    Some(Stmt::Decl(Decl::Function(FunctionDecl {
         name,
         body,
         params: param_list,
         return_type,
-    }))
+    })))
 }
 
 fn parameter_list(tokens: &mut VecDeque<Token>) -> ParamList {
@@ -212,7 +213,8 @@ fn keyword(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
             }
             TokenKind::Return => {
                 tokens.pop_front().unwrap();
-                return Some(Stmt::Return);
+                let expr = expression(tokens);
+                return Some(Stmt::Return(expr));
             }
             _ => {}
         }
@@ -402,6 +404,12 @@ fn atom(tokens: &mut VecDeque<Token>) -> Option<Expr> {
             | TokenKind::String(_)
             | TokenKind::Bool(_)
             | TokenKind::Ident(_) => {}
+            TokenKind::OpenParen => {
+                expect(tokens, TokenKind::OpenParen);
+                let expr = expression(tokens);
+                expect(tokens, TokenKind::CloseParen);
+                return expr;
+            }
             _ => return None,
         }
 
@@ -412,7 +420,7 @@ fn atom(tokens: &mut VecDeque<Token>) -> Option<Expr> {
         return match tokens.pop_front().map(|t| t.kind).unwrap() {
             TokenKind::Integer(n) => Some(Expr::Integer(n)),
             TokenKind::Float(n) => Some(Expr::Float(n)),
-            TokenKind::String(n) => Some(Expr::StringLiteral(n)),
+            TokenKind::String(n) => Some(Expr::StringLiteral(Rc::new(n))),
             TokenKind::Bool(n) => Some(Expr::Bool(n)),
             TokenKind::Ident(n) => Some(Expr::Ident(n)),
             _ => None,

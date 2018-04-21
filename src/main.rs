@@ -8,17 +8,22 @@ extern crate log;
 extern crate itertools;
 extern crate pretty_env_logger;
 
+mod ast;
+mod builtins;
+mod interpreter;
+mod lexer;
+mod parser;
+mod traits;
+
 use failure::err_msg;
+
+use interpreter::Interpreter;
+use traits::Visitable;
 
 use std::env;
 use std::fs::File;
 use std::io::Read;
 use std::process;
-
-mod ast;
-mod builtins;
-mod lexer;
-mod parser;
 
 fn main() {
     pretty_env_logger::init().unwrap();
@@ -36,11 +41,14 @@ fn main() {
         process::exit(1);
     });
 
-    let ast = parser::parse_ast(tokens).unwrap_or_else(|e| {
+    let mut ast = parser::parse_ast(tokens).unwrap_or_else(|e| {
         print_error_message(e, &env::args().nth(1).unwrap(), &source);
         process::exit(1);
     });
+
     println!("{:#?}", ast);
+    let mut interp = Interpreter::new();
+    ast.accept(&mut interp);
 }
 
 fn parse_args() -> Result<Vec<char>, failure::Error> {

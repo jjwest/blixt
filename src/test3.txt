@@ -1,23 +1,26 @@
-3434334 + 24 / 24 + 2 / 2
+24 / (24 + 2 - 1) / 2 + 3434334+
 
 3434
 
 name := "Jonas"
 age: float = 32
 
-if true {
-   name := "Jonas"
-   age := 28
-} else if 3 < 5 {
-   hej := 29
-} else {
-   msg := "Hello"
+first := 1
+second := 2
+
+// if true {
+//    name := "Jonas"
+//    age := 28
+// } else if 3 < 5 {
+//    hej := 29
+// } else {
+//    msg := "Hello"
+// }
+
+
+fn add_things(a: int, b: int) -> int {
+   result := a + b
+   return result
 }
 
-
-fn do_cool_things(name: string) -> string {
-   things := name
-   return things
-}
-
-do_cool_things(name)
+sum := add_things(5, 25)
