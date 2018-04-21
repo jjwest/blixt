@@ -14,7 +14,7 @@ pub struct Ast {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    Assignment(BinaryOp),
+    Assignment(Assignment),
     Block(StmtList),
     Decl(Decl),
     Expr(Expr),
@@ -35,8 +35,14 @@ pub enum Expr {
 }
 
 #[derive(Debug, Clone)]
+pub struct Assignment {
+    pub ident: String,
+    pub value: Expr,
+}
+
+#[derive(Debug, Clone)]
 pub struct UnaryOp {
-    pub item: Box<Expr>,
+    pub expr: Box<Expr>,
     pub op: UnaryOpKind,
 }
 
@@ -142,8 +148,8 @@ impl Visitable for StmtList {
 impl Visitable for Stmt {
     fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
         match self {
-            Stmt::Assignment(a) => visitor.visit_binary_op(a),
-            // Block(a) => a.accept(visitor),
+            Stmt::Assignment(a) => visitor.visit_assignment(a),
+            Stmt::Block(a) => visitor.visit_block(a),
             Stmt::Decl(a) => visitor.visit_decl(a),
             Stmt::Expr(a) => visitor.visit_expr(a),
             Stmt::If(a) => visitor.visit_if_stmt(a),
@@ -173,9 +179,7 @@ impl Visitable for UnaryOp {
 
 impl Visitable for Decl {
     fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
-        let result = visitor.visit_decl(self);
-        println!("DECL: {:#?}", result);
-        result
+        visitor.visit_decl(self)
     }
 }
 

@@ -36,17 +36,20 @@ fn main() {
         }
     };
 
+    info!("START LEXER");
     let tokens = lexer::generate_tokens(&source).unwrap_or_else(|e| {
         print_error_message(e, &env::args().nth(1).unwrap(), &source);
         process::exit(1);
     });
 
+    info!("START PARSE AST");
     let mut ast = parser::parse_ast(tokens).unwrap_or_else(|e| {
         print_error_message(e, &env::args().nth(1).unwrap(), &source);
         process::exit(1);
     });
 
     println!("{:#?}", ast);
+    info!("START INTERPRET");
     let mut interp = Interpreter::new();
     ast.accept(&mut interp);
 }

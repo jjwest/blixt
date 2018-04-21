@@ -1,26 +1,16 @@
-24 / (24 + 2 - 1) / 2 + 3434334+
-
-3434
-
 name := "Jonas"
-age: float = 32
+age := 20
 
-first := 1
-second := 2
+age = -age
 
-// if true {
-//    name := "Jonas"
-//    age := 28
-// } else if 3 < 5 {
-//    hej := 29
-// } else {
-//    msg := "Hello"
-// }
-
-
-fn add_things(a: int, b: int) -> int {
-   result := a + b
-   return result
+fn double_age(curr_age: int) -> int {
+   return curr_age * 2
 }
 
-sum := add_things(5, 25)
+age = double_age(age)
+
+if age == 40 {
+   message := "YEAH"
+} else {
+  mesage := "NO"
+}

@@ -1,7 +1,7 @@
 use failure;
 
-use ast::{ArgList, Ast, BinaryOp, BinaryOpKind, Decl, Expr, FunctionCall, FunctionDecl, If, Param,
-          ParamList, Stmt, ValueKind, VarDecl};
+use ast::{ArgList, Assignment, Ast, BinaryOp, BinaryOpKind, Decl, Expr, FunctionCall,
+          FunctionDecl, If, Param, ParamList, Stmt, UnaryOp, UnaryOpKind, ValueKind, VarDecl};
 use lexer::{Token, TokenKind};
 
 use std::collections::VecDeque;
@@ -297,22 +297,11 @@ fn assignment(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
         _ => return None,
     };
 
-    let ident = match tokens.pop_front() {
-        Some(Token { kind, .. }) => match kind {
-            TokenKind::Ident(n) => Expr::Ident(n),
-            _ => unreachable!(),
-        },
-        _ => unreachable!(),
-    };
-
-    tokens.pop_front();
+    let ident = ident(tokens).unwrap();
+    tokens.pop_front().unwrap();
     let value = expression(tokens).expect("Missing expr after assignment");
 
-    Some(Stmt::Assignment(BinaryOp {
-        lhs: Box::new(ident),
-        rhs: Box::new(value),
-        op,
-    }))
+    Some(Stmt::Assignment(Assignment { ident, value }))
 }
 
 fn expression(tokens: &mut VecDeque<Token>) -> Option<Expr> {
@@ -324,7 +313,7 @@ fn expression(tokens: &mut VecDeque<Token>) -> Option<Expr> {
                 TokenKind::Equal => BinaryOpKind::Equal,
                 TokenKind::Greater => BinaryOpKind::Greater,
                 TokenKind::GreaterEqual => BinaryOpKind::GreaterEqual,
-                TokenKind::Lesser => BinaryOpKind::LesserEqual,
+                TokenKind::Lesser => BinaryOpKind::Lesser,
                 TokenKind::NotEqual => BinaryOpKind::NotEqual,
                 _ => return lhs,
             };
@@ -404,6 +393,22 @@ fn atom(tokens: &mut VecDeque<Token>) -> Option<Expr> {
             | TokenKind::String(_)
             | TokenKind::Bool(_)
             | TokenKind::Ident(_) => {}
+            TokenKind::Sub => {
+                expect(tokens, TokenKind::Sub);
+                let expr = expression(tokens).expect("expected expression");
+                return Some(Expr::UnaryOp(UnaryOp {
+                    expr: Box::new(expr),
+                    op: UnaryOpKind::Neg,
+                }));
+            }
+            TokenKind::Not => {
+                expect(tokens, TokenKind::Sub);
+                let expr = expression(tokens).expect("expected expression");
+                return Some(Expr::UnaryOp(UnaryOp {
+                    expr: Box::new(expr),
+                    op: UnaryOpKind::Not,
+                }));
+            }
             TokenKind::OpenParen => {
                 expect(tokens, TokenKind::OpenParen);
                 let expr = expression(tokens);

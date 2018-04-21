@@ -1,5 +1,5 @@
-use ast::{BinaryOp, BinaryOpKind, Decl, Expr, FunctionCall, FunctionDecl, If, Stmt, StmtList,
-          UnaryOp};
+use ast::{Assignment, BinaryOp, BinaryOpKind, Decl, Expr, FunctionCall, FunctionDecl, If, Stmt,
+          StmtList, UnaryOp, UnaryOpKind};
 use builtins::Value;
 use traits::{AstVisitor, Visitable};
 
@@ -90,6 +90,17 @@ impl Scope {
             scope_level: 0,
         }
     }
+
+    fn new_scope_level(&mut self) {
+        self.scope_level += 1;
+    }
+
+    fn pop_scope_level(&mut self) {
+        let curr_level = self.scope_level;
+        self.variables
+            .retain(|var| var.defined_in_scope_level != curr_level);
+        self.scope_level -= 1;
+    }
 }
 
 impl AstVisitor for Interpreter {
@@ -168,25 +179,28 @@ impl AstVisitor for Interpreter {
                 (Value::Bool(a), Value::Bool(b)) => Value::Bool(a || b),
                 _ => panic!("Can only use logical operators with bools"),
             },
-            BinaryOpKind::Assign => {
-                let ident = match node.lhs.accept(self) {
-                    Value::String(val) => val,
-                    _ => panic!("Cannot assign to non-identiier"),
-                };
-                let value = node.rhs.accept(self);
-                let var = self.curr_scope()
-                    .get_variable_mut(&*ident)
-                    .expect(&format!("Cant set unknown ident {}", ident));
-
-                *var = value;
-                Value::Nil
-            }
             _ => unimplemented!(),
         }
     }
 
     fn visit_unary_op(&mut self, node: &mut UnaryOp) -> Value {
-        unimplemented!();
+        match node.op {
+            UnaryOpKind::Not => match node.expr.accept(self) {
+                Value::Bool(n) => Value::Bool(!n),
+                _ => panic!("Cannot negate non boolean expression"),
+            },
+            UnaryOpKind::Neg => match node.expr.accept(self) {
+                Value::Int(n) => Value::Int(-n),
+                Value::Float(n) => Value::Float(-n),
+                Value::Bool(_) => panic!("Cannot have negative booleans"),
+                Value::String(_) => panic!("Cannot have negative strings"),
+                Value::Nil => panic!("Cannot have negative nil"),
+                _ => {
+                    println!("Tried to negate return value");
+                    Value::Nil
+                }
+            },
+        }
     }
 
     fn visit_funcall(&mut self, node: &mut FunctionCall) -> Value {
@@ -218,7 +232,16 @@ impl AstVisitor for Interpreter {
     }
 
     fn visit_if_stmt(&mut self, node: &mut If) -> Value {
-        unimplemented!();
+        trace!("Visit if stmt: {:?}", node);
+
+        let cond = node.cond.accept(self);
+        if cond == Value::Bool(true) {
+            node.body.accept(self)
+        } else if let Some(ref mut else_body) = node.else_body {
+            else_body.accept(self)
+        } else {
+            Value::Nil
+        }
     }
 
     fn visit_ident(&mut self, node: &mut String) -> Value {
@@ -234,5 +257,23 @@ impl AstVisitor for Interpreter {
             Some(expr) => Value::Return(Box::new(expr.accept(self))),
             None => Value::Nil,
         }
+    }
+
+    fn visit_block(&mut self, node: &mut StmtList) -> Value {
+        trace!("Visit block");
+        self.curr_scope().new_scope_level();
+        let result = self.visit_stmt_list(node);
+        self.curr_scope().pop_scope_level();
+        result
+    }
+
+    fn visit_assignment(&mut self, node: &mut Assignment) -> Value {
+        let value = node.value.accept(self);
+        let var = self.curr_scope()
+            .get_variable_mut(&node.ident)
+            .expect(&format!("Unknown ident {}", node.ident));
+
+        *var = value;
+        Value::Nil
     }
 }
