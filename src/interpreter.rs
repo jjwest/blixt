@@ -125,6 +125,7 @@ impl AstVisitor for Interpreter {
         trace!("Visit expr");
 
         match node {
+            Expr::Bool(v) => Value::Bool(*v),
             Expr::Float(v) => Value::Float(*v),
             Expr::Integer(v) => Value::Int(*v),
             Expr::StringLiteral(v) => Value::String(v.clone()),
@@ -132,7 +133,6 @@ impl AstVisitor for Interpreter {
             Expr::UnaryOp(v) => self.visit_unary_op(v),
             Expr::BinaryOp(v) => self.visit_binary_op(v),
             Expr::FunctionCall(v) => self.visit_funcall(v),
-            _ => Value::Nil,
         }
     }
 
@@ -173,11 +173,17 @@ impl AstVisitor for Interpreter {
             }
             BinaryOpKind::And => match (node.lhs.accept(self), node.rhs.accept(self)) {
                 (Value::Bool(a), Value::Bool(b)) => Value::Bool(a && b),
-                _ => panic!("Can only use logical operators with bools"),
+                (a, b) => panic!(
+                    "Can only use logical operators with bools AND, found {} {}",
+                    a, b
+                ),
             },
             BinaryOpKind::Or => match (node.lhs.accept(self), node.rhs.accept(self)) {
                 (Value::Bool(a), Value::Bool(b)) => Value::Bool(a || b),
-                _ => panic!("Can only use logical operators with bools"),
+                (a, b) => panic!(
+                    "Can only use logical operators with bools OR, found {} {}",
+                    a, b
+                ),
             },
             _ => unimplemented!(),
         }

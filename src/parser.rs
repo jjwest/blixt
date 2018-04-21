@@ -109,19 +109,19 @@ fn function_decl(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
     tokens.pop_front().unwrap();
     let name = ident(tokens).expect("Expected token after func decl");
     let param_list = parameter_list(tokens);
-    let return_type = tokens.pop_front().and_then(|token| {
-        if token.kind == TokenKind::ReturnDecl {
-            match tokens.pop_front().map(|tok| tok.kind) {
-                Some(TokenKind::BoolType) => Some(ValueKind::Bool),
-                Some(TokenKind::IntType) => Some(ValueKind::Integer),
-                Some(TokenKind::FloatType) => Some(ValueKind::Float),
-                Some(TokenKind::StringType) => Some(ValueKind::String),
-                _ => panic!("Expected type after return decl"),
-            }
-        } else {
-            None
+
+    let return_type = if let Some(TokenKind::ReturnDecl) = tokens.get(0).map(|tok| &tok.kind) {
+        tokens.pop_front().unwrap();
+        match tokens.pop_front().map(|tok| tok.kind) {
+            Some(TokenKind::BoolType) => Some(ValueKind::Bool),
+            Some(TokenKind::IntType) => Some(ValueKind::Integer),
+            Some(TokenKind::FloatType) => Some(ValueKind::Float),
+            Some(TokenKind::StringType) => Some(ValueKind::String),
+            _ => panic!("Expected type after return decl"),
         }
-    });
+    } else {
+        None
+    };
 
     expect(tokens, TokenKind::OpenBrace);
     let body = statement_list(tokens);
@@ -235,6 +235,7 @@ fn if_statement(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
         tokens.pop_front().unwrap();
 
         let cond = expression(tokens).expect("Expected expression after if");
+        println!("IF COND: {:?}", cond);
         expect(tokens, TokenKind::OpenBrace);
         let body = statement_list(tokens);
         expect(tokens, TokenKind::CloseBrace);
@@ -305,7 +306,55 @@ fn assignment(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
 }
 
 fn expression(tokens: &mut VecDeque<Token>) -> Option<Expr> {
-    trace!("Entered logical expr");
+    trace!("Entered expression");
+
+    logical_expr_a(tokens).map(|lhs| {
+        if let Some(op) = tokens.get(0) {
+            let op = match op.kind {
+                TokenKind::And => BinaryOpKind::And,
+                _ => return lhs,
+            };
+
+            tokens.pop_front();
+
+            let rhs = expression(tokens).expect("No rhs in expression");
+            Expr::BinaryOp(BinaryOp {
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+                op,
+            })
+        } else {
+            lhs
+        }
+    })
+}
+
+fn logical_expr_a(tokens: &mut VecDeque<Token>) -> Option<Expr> {
+    trace!("Entered expression");
+
+    logical_expr_b(tokens).map(|lhs| {
+        if let Some(op) = tokens.get(0) {
+            let op = match op.kind {
+                TokenKind::Or => BinaryOpKind::Or,
+                _ => return lhs,
+            };
+
+            tokens.pop_front();
+
+            let rhs = logical_expr_a(tokens).expect("No rhs in expression");
+            Expr::BinaryOp(BinaryOp {
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+                op,
+            })
+        } else {
+            lhs
+        }
+    })
+}
+
+fn logical_expr_b(tokens: &mut VecDeque<Token>) -> Option<Expr> {
+    trace!("Entered expression");
 
     factor(tokens).map(|lhs| {
         if let Some(op) = tokens.get(0) {
@@ -320,7 +369,7 @@ fn expression(tokens: &mut VecDeque<Token>) -> Option<Expr> {
 
             tokens.pop_front();
 
-            let rhs = expression(tokens).expect("No rhs in expression");
+            let rhs = logical_expr_b(tokens).expect("No rhs in expression");
             Expr::BinaryOp(BinaryOp {
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),

@@ -4,7 +4,7 @@ height := 125.3
 is_programmer := true
 
 fn hello(name: string, age: int, is_programmer: bool) {
-  name := "Jonas";
+  name := "Jonas"
   // Things
 }
 
