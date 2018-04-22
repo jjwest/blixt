@@ -6,6 +6,10 @@ fn test_things_works() -> int {
    num := 5
    {
         num += 5
+        age := 2
+        {
+            age *= 2
+        }
    }
 
    return num
@@ -25,3 +29,5 @@ test_things_works()
 
 number := 5
 number += 4
+
+print(number, 5 + 32)

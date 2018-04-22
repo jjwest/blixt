@@ -1,0 +1,13 @@
+fn present_person(name: string, age: int) {
+   print("% is % years old\n", name, age)
+}
+
+fn main() {
+   name := input("Enter name: ")
+   age := input("Enter age: ")
+
+   present_person(name, age)
+}
+
+print("%\n", -5 + 2)
+main()

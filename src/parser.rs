@@ -1,12 +1,38 @@
 use failure;
 
-use ast::{ArgList, Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr,
-          FunctionCall, FunctionDecl, If, Param, ParamList, Stmt, UnaryOp, UnaryOpKind, ValueKind,
-          VarDecl};
+use ast::{ArgList, Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, For,
+          FunctionCall, FunctionDecl, If, Input, Param, ParamList, Print, Stmt, UnaryOp,
+          UnaryOpKind, VarDecl};
+use builtins::ValueKind;
 use lexer::{Token, TokenKind};
 
 use std::collections::VecDeque;
 use std::rc::Rc;
+
+macro_rules! continue_if_any_of {
+    ( $tokens:expr, $($type:pat),+ ) => {{
+        let mut abort = true;
+        $(
+            match $tokens.get(0).map(|t| &t.kind) {
+                Some($type) => abort = false,
+                _ => {},
+            }
+        )*
+    }}
+}
+
+macro_rules! continue_if_order_found {
+    ( $tokens:expr, $($type:pat),+ ) => {{
+        let mut abort = true;
+        let mut count = 0;
+        $(
+            match $tokens.get(count).map(|t| &t.kind) {
+                Some($type) => count += 1,
+                _ => return None,
+            }
+        )*
+    }}
+}
 
 pub fn parse_ast(mut tokens: VecDeque<Token>) -> Result<Ast, failure::Error> {
     let statements = statement_list(&mut tokens);
@@ -38,7 +64,9 @@ fn statement_list(tokens: &mut VecDeque<Token>) -> Vec<Stmt> {
 fn statement(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
     trace!("Entered statement: {:?}", tokens.get(0));
 
-    if let Some(decl) = declaration(tokens) {
+    if let Some(print) = print(tokens) {
+        Some(print)
+    } else if let Some(decl) = declaration(tokens) {
         Some(decl)
     } else if let Some(if_stmt) = if_statement(tokens) {
         Some(if_stmt)
@@ -55,6 +83,23 @@ fn statement(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
     } else {
         None
     }
+}
+
+fn for_loop(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
+    trace!("Entered for_loop");
+    continue_if_any_of!(tokens, TokenKind::For);
+    tokens.pop_front().unwrap();
+
+    let expr = expression(tokens).expect("Expected expression after for");
+    let block = block(tokens).expect("Expected block");
+
+    Some(Stmt::For(For {
+        iter: expr,
+        block: match block {
+            Stmt::Block(b) => b,
+            _ => unreachable!(),
+        },
+    }))
 }
 
 fn declaration(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
@@ -189,15 +234,15 @@ fn function_call(tokens: &mut VecDeque<Token>) -> Option<Expr> {
     }
 
     let name = ident(tokens).unwrap();
-    expect(tokens, TokenKind::OpenParen);
     let args = argument_list(tokens);
-    expect(tokens, TokenKind::CloseParen);
 
     Some(Expr::FunctionCall(FunctionCall { name, args }))
 }
 
 fn argument_list(tokens: &mut VecDeque<Token>) -> ArgList {
+    expect(tokens, TokenKind::OpenParen);
     let mut args = ArgList::new();
+
     while let Some(expr) = expression(tokens) {
         args.push(expr);
 
@@ -208,6 +253,8 @@ fn argument_list(tokens: &mut VecDeque<Token>) -> ArgList {
             _ => break,
         }
     }
+
+    expect(tokens, TokenKind::CloseParen);
     args
 }
 
@@ -283,6 +330,23 @@ fn block(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
     } else {
         None
     }
+}
+
+fn print(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
+    trace!("Entered print");
+
+    match tokens.get(0) {
+        Some(Token { kind, .. }) => {
+            if *kind != TokenKind::Ident("print".to_owned()) {
+                return None;
+            }
+        }
+        _ => return None,
+    }
+
+    tokens.pop_front();
+    let args = argument_list(tokens);
+    Some(Stmt::Print(Print { args }))
 }
 
 fn assignment(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
@@ -453,7 +517,7 @@ fn atom(tokens: &mut VecDeque<Token>) -> Option<Expr> {
             | TokenKind::Ident(_) => {}
             TokenKind::Sub => {
                 expect(tokens, TokenKind::Sub);
-                let expr = expression(tokens).expect("expected expression");
+                let expr = atom(tokens).expect("expected expression");
                 return Some(Expr::UnaryOp(UnaryOp {
                     expr: Box::new(expr),
                     op: UnaryOpKind::Neg,
@@ -474,6 +538,10 @@ fn atom(tokens: &mut VecDeque<Token>) -> Option<Expr> {
                 return expr;
             }
             _ => return None,
+        }
+
+        if let Some(input) = input(tokens) {
+            return Some(input);
         }
 
         if let Some(function) = function_call(tokens) {
@@ -498,4 +566,24 @@ fn ident(tokens: &mut VecDeque<Token>) -> Option<String> {
         Some(TokenKind::Ident(n)) => Some(n),
         _ => None,
     }
+}
+
+fn input(tokens: &mut VecDeque<Token>) -> Option<Expr> {
+    trace!("Entered input, {:?}", tokens.get(0));
+
+    match tokens.get(0) {
+        Some(Token { kind, .. }) => {
+            if *kind != TokenKind::Ident("input".to_owned()) {
+                return None;
+            }
+        }
+        _ => return None,
+    }
+
+    tokens.pop_front();
+    let message = expression(tokens);
+
+    Some(Expr::Input(Input {
+        message: message.map(|m| Box::new(m)),
+    }))
 }

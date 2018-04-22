@@ -2,12 +2,13 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Rem, RemAssign, Sub, SubAssign};
 use std::rc::Rc;
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ValueKind {
     Bool,
-    Float,
-    Int,
     String,
+    Integer,
+    Float,
+    Undecided,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]

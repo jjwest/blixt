@@ -1,4 +1,4 @@
-use builtins::Value;
+use builtins::{Value, ValueKind};
 use traits::{AstVisitor, Visitable};
 
 use std::rc::Rc;
@@ -18,6 +18,8 @@ pub enum Stmt {
     Block(StmtList),
     Decl(Decl),
     Expr(Expr),
+    For(For),
+    Print(Print),
     If(If),
     Return(Option<Expr>),
 }
@@ -28,6 +30,7 @@ pub enum Expr {
     Integer(i32),
     StringLiteral(Rc<String>),
     Ident(String),
+    Input(Input),
     Bool(bool),
     UnaryOp(UnaryOp),
     BinaryOp(BinaryOp),
@@ -109,13 +112,10 @@ pub struct FunctionDecl {
     pub return_type: Option<ValueKind>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ValueKind {
-    Bool,
-    String,
-    Integer,
-    Float,
-    Undecided,
+#[derive(Debug, Clone)]
+pub struct Param {
+    pub name: String,
+    pub kind: ValueKind,
 }
 
 #[derive(Debug, Clone)]
@@ -126,15 +126,25 @@ pub struct If {
 }
 
 #[derive(Debug, Clone)]
-pub struct Param {
-    pub name: String,
-    pub kind: ValueKind,
+pub struct For {
+    pub iter: Expr,
+    pub block: StmtList,
 }
 
 #[derive(Debug, Clone)]
 pub struct FunctionCall {
     pub name: String,
     pub args: Vec<Expr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Print {
+    pub args: ArgList,
+}
+
+#[derive(Debug, Clone)]
+pub struct Input {
+    pub message: Option<Box<Expr>>,
 }
 
 impl Visitable for Ast {
@@ -154,8 +164,10 @@ impl Visitable for Stmt {
         match self {
             Stmt::Assignment(a) => visitor.visit_assignment(a),
             Stmt::Block(a) => visitor.visit_block(a),
+            Stmt::Print(a) => visitor.visit_print(a),
             Stmt::Decl(a) => visitor.visit_decl(a),
             Stmt::Expr(a) => visitor.visit_expr(a),
+            Stmt::For(a) => visitor.visit_for(a),
             Stmt::If(a) => visitor.visit_if_stmt(a),
             Stmt::Return(a) => visitor.visit_return_stmt(a.as_mut()),
         }

@@ -1,4 +1,5 @@
-use ast::{Assignment, BinaryOp, Decl, Expr, FunctionCall, If, Stmt, StmtList, UnaryOp};
+use ast::{Assignment, BinaryOp, Decl, Expr, For, FunctionCall, If, Input, Print, Stmt, StmtList,
+          UnaryOp};
 use builtins::Value;
 
 pub trait AstVisitor {
@@ -14,6 +15,9 @@ pub trait AstVisitor {
     fn visit_return_stmt(&mut self, node: Option<&mut Expr>) -> Value;
     fn visit_block(&mut self, node: &mut StmtList) -> Value;
     fn visit_assignment(&mut self, node: &mut Assignment) -> Value;
+    fn visit_print(&mut self, node: &mut Print) -> Value;
+    fn visit_input(&mut self, node: &mut Input) -> Value;
+    fn visit_for(&mut self, node: &mut For) -> Value;
 }
 
 pub trait Visitable {

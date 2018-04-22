@@ -14,6 +14,7 @@ mod interpreter;
 mod lexer;
 mod parser;
 mod traits;
+// mod typecheck;
 
 use failure::err_msg;
 

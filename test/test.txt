@@ -4,8 +4,9 @@ height := 125.3
 is_programmer := true
 
 fn hello(name: string, age: int, is_programmer: bool) {
-  name := "Jonas"
-  // Things
+   if is_programmer {
+      age *= 2
+   }
 }
 
-hello(name, age, is_programmer)
+print(hello(name, age, is_programmer))

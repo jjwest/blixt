@@ -1,13 +1,16 @@
-use ast::{Assignment, AssignmentKind, BinaryOp, BinaryOpKind, Decl, Expr, FunctionCall,
-          FunctionDecl, If, Stmt, StmtList, UnaryOp, UnaryOpKind};
+use ast::{Assignment, AssignmentKind, BinaryOp, BinaryOpKind, Decl, Expr, For, FunctionCall,
+          FunctionDecl, If, Input, Print, Stmt, StmtList, UnaryOp, UnaryOpKind};
 use builtins::Value;
 use traits::{AstVisitor, Visitable};
 
 use std::collections::HashMap;
+use std::io::{self, Write};
+use std::rc::Rc;
 
 type FuncName = String;
 
 pub struct Interpreter {
+    global_scope: Scope,
     scopes: Vec<Scope>,
     curr_scope: usize,
 }
@@ -15,6 +18,7 @@ pub struct Interpreter {
 impl Interpreter {
     pub fn new() -> Self {
         Self {
+            global_scope: Scope::new(),
             scopes: vec![Scope::new()],
             curr_scope: 0,
         }
@@ -32,7 +36,65 @@ impl Interpreter {
     }
 
     fn curr_scope(&mut self) -> &mut Scope {
-        &mut self.scopes[self.curr_scope]
+        if self.curr_scope == 0 {
+            &mut self.global_scope
+        } else {
+            &mut self.scopes[self.curr_scope - 1]
+        }
+    }
+
+    fn add_variable(&mut self, name: String, value: Value) {
+        let scope = self.curr_scope();
+        scope.variables.push(Variable {
+            name,
+            value,
+            defined_in_scope_level: scope.scope_level,
+        })
+    }
+
+    fn get_variable(&mut self, name: &str) -> Option<Value> {
+        for var in self.curr_scope().variables.iter_mut().rev() {
+            if var.name == name {
+                return Some(var.value.clone());
+            }
+        }
+
+        for var in self.global_scope.variables.iter_mut().rev() {
+            if var.name == name {
+                return Some(var.value.clone());
+            }
+        }
+
+        None
+    }
+
+    fn get_variable_mut(&mut self, name: &str) -> Option<&mut Value> {
+        for var in self.curr_scope().variables.iter_mut().rev() {
+            if var.name == name {
+                return Some(&mut var.value);
+            }
+        }
+
+        for var in self.global_scope.variables.iter_mut().rev() {
+            if var.name == name {
+                return Some(&mut var.value);
+            }
+        }
+
+        None
+    }
+
+    fn add_function(&mut self, func: FunctionDecl) {
+        let scope = self.curr_scope();
+        scope.functions.insert(func.name.clone(), func);
+    }
+
+    fn get_function(&mut self, name: &str) -> Option<FunctionDecl> {
+        let scope = self.curr_scope();
+        match scope.functions.get(name) {
+            Some(func) => Some(func.clone()),
+            None => self.global_scope.functions.get(name).map(|f| f.clone()),
+        }
     }
 }
 
@@ -40,40 +102,6 @@ struct Scope {
     functions: HashMap<FuncName, FunctionDecl>,
     variables: Vec<Variable>,
     scope_level: usize,
-}
-
-impl Scope {
-    fn add_variable(&mut self, name: String, value: Value) {
-        self.variables.push(Variable {
-            name,
-            value,
-            defined_in_scope_level: self.scope_level,
-        })
-    }
-
-    fn get_variable(&mut self, name: &str) -> Option<Value> {
-        self.variables
-            .iter()
-            .rev()
-            .find(|v| v.name == name)
-            .map(|v| v.value.clone())
-    }
-
-    fn get_variable_mut(&mut self, name: &str) -> Option<&mut Value> {
-        self.variables
-            .iter_mut()
-            .rev()
-            .find(|v| v.name == name)
-            .map(|v| &mut v.value)
-    }
-
-    fn add_function(&mut self, func: FunctionDecl) {
-        self.functions.insert(func.name.clone(), func);
-    }
-
-    fn get_function(&mut self, name: &str) -> Option<FunctionDecl> {
-        self.functions.get(name).cloned()
-    }
 }
 
 struct Variable {
@@ -133,6 +161,7 @@ impl AstVisitor for Interpreter {
             Expr::UnaryOp(v) => self.visit_unary_op(v),
             Expr::BinaryOp(v) => self.visit_binary_op(v),
             Expr::FunctionCall(v) => self.visit_funcall(v),
+            Expr::Input(v) => self.visit_input(v),
         }
     }
 
@@ -142,12 +171,12 @@ impl AstVisitor for Interpreter {
 
         match node {
             Decl::Function(func) => {
-                self.curr_scope().add_function(func);
+                self.add_function(func);
                 Value::Nil
             }
             Decl::Variable(mut var) => {
                 let value = var.value.accept(self);
-                self.curr_scope().add_variable(var.name.clone(), value);
+                self.add_variable(var.name.clone(), value);
                 Value::Nil
             }
         }
@@ -211,8 +240,7 @@ impl AstVisitor for Interpreter {
     fn visit_funcall(&mut self, node: &mut FunctionCall) -> Value {
         trace!("Visit funcall");
 
-        let mut func = self.curr_scope()
-            .get_function(&node.name)
+        let mut func = self.get_function(&node.name)
             .expect(&format!("Unknown function {}", node.name));
 
         assert!(
@@ -228,7 +256,7 @@ impl AstVisitor for Interpreter {
 
         self.new_scope();
         for (param, value) in func.params.iter().zip(arg_values) {
-            self.curr_scope().add_variable(param.name.clone(), value);
+            self.add_variable(param.name.clone(), value);
         }
 
         let result = func.body.accept(self);
@@ -251,8 +279,7 @@ impl AstVisitor for Interpreter {
 
     fn visit_ident(&mut self, node: &mut String) -> Value {
         trace!("Visit ident");
-        self.curr_scope()
-            .get_variable(&node)
+        self.get_variable(&node)
             .expect(&format!("Unknown ident {}", node))
     }
 
@@ -276,8 +303,7 @@ impl AstVisitor for Interpreter {
         trace!("Visit assignment");
 
         let value = node.value.accept(self);
-        let var = self.curr_scope()
-            .get_variable_mut(&node.ident)
+        let var = self.get_variable_mut(&node.ident)
             .expect(&format!("Unknown ident {}", node.ident));
 
         match node.op {
@@ -289,6 +315,93 @@ impl AstVisitor for Interpreter {
             AssignmentKind::Mod => *var %= value,
         }
 
+        Value::Nil
+    }
+
+    fn visit_print(&mut self, node: &mut Print) -> Value {
+        trace!("Visit print");
+
+        if let Some(fmt_string) = node.args.get_mut(0) {
+            let fmt_string = match fmt_string.accept(self) {
+                Value::String(v) => v,
+                _ => panic!("Cannot print without format string"),
+            };
+
+            let mut num_fmt_args = 0;
+            let mut output = String::with_capacity(fmt_string.len());
+            let mut escaped = false;
+
+            for ch in fmt_string.chars() {
+                if escaped {
+                    match ch {
+                        '%' => output.push('%'),
+                        'n' => output.push('\n'),
+                        'r' => output.push('\r'),
+                        't' => output.push('\t'),
+                        c => output.push(c),
+                    }
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '%' {
+                    match node.args
+                        .get_mut(num_fmt_args + 1)
+                        .map(|arg| arg.accept(self))
+                    {
+                        Some(Value::String(s)) => {
+                            for ch in s.chars() {
+                                output.push(ch);
+                            }
+                        }
+                        Some(Value::Int(n)) => output.push_str(&format!("{}", n)),
+                        Some(Value::Float(n)) => output.push_str(&format!("{}", n)),
+                        Some(Value::Bool(n)) => output.push_str(&format!("{}", n)),
+                        Some(Value::Nil) => output.push_str("nil"),
+                        Some(Value::Return(_)) => unreachable!(),
+                        None => panic!("Expected format arg {}, but none found", num_fmt_args),
+                    }
+                    num_fmt_args += 1;
+                } else {
+                    output.push(ch);
+                }
+            }
+
+            assert!(
+                num_fmt_args == node.args.len() - 1,
+                format!(
+                    "Format string expected {} arguments, found {}",
+                    num_fmt_args,
+                    node.args.len() - 1
+                )
+            );
+            print!("{}", output);
+            io::stdout().flush().expect("Failed to flush stdout");
+        }
+
+        Value::Nil
+    }
+
+    fn visit_input(&mut self, node: &mut Input) -> Value {
+        match node.message.as_mut().map(|m| m.accept(self)) {
+            Some(Value::String(v)) => {
+                print!("{}", v);
+                io::stdout().flush().expect("Failed to flush stdout");
+            }
+            Some(_) => panic!("Can only print strings"),
+            None => {}
+        }
+
+        let mut buf = String::new();
+        io::stdin()
+            .read_line(&mut buf)
+            .expect("Failed to read from stdin");
+
+        buf.pop(); // Remove newline
+
+        Value::String(Rc::new(buf))
+    }
+
+    fn visit_for(&mut self, node: &mut For) -> Value {
         Value::Nil
     }
 }
