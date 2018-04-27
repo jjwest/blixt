@@ -132,6 +132,12 @@ pub struct For {
 }
 
 #[derive(Debug, Clone)]
+pub struct Range {
+    pub start: i64,
+    pub end: i64,
+}
+
+#[derive(Debug, Clone)]
 pub struct FunctionCall {
     pub name: String,
     pub args: Vec<Expr>,

@@ -1,38 +1,13 @@
 use failure;
 
 use ast::{ArgList, Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, For,
-          FunctionCall, FunctionDecl, If, Input, Param, ParamList, Print, Stmt, UnaryOp,
+          FunctionCall, FunctionDecl, If, Input, Param, ParamList, Print, Range, Stmt, UnaryOp,
           UnaryOpKind, VarDecl};
 use builtins::ValueKind;
 use lexer::{Token, TokenKind};
 
 use std::collections::VecDeque;
 use std::rc::Rc;
-
-macro_rules! continue_if_any_of {
-    ( $tokens:expr, $($type:pat),+ ) => {{
-        let mut abort = true;
-        $(
-            match $tokens.get(0).map(|t| &t.kind) {
-                Some($type) => abort = false,
-                _ => {},
-            }
-        )*
-    }}
-}
-
-macro_rules! continue_if_order_found {
-    ( $tokens:expr, $($type:pat),+ ) => {{
-        let mut abort = true;
-        let mut count = 0;
-        $(
-            match $tokens.get(count).map(|t| &t.kind) {
-                Some($type) => count += 1,
-                _ => return None,
-            }
-        )*
-    }}
-}
 
 pub fn parse_ast(mut tokens: VecDeque<Token>) -> Result<Ast, failure::Error> {
     let statements = statement_list(&mut tokens);
@@ -70,6 +45,8 @@ fn statement(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
         Some(decl)
     } else if let Some(if_stmt) = if_statement(tokens) {
         Some(if_stmt)
+    } else if let Some(for_loop) = for_loop(tokens) {
+        Some(for_loop)
     } else if let Some(keyword) = keyword(tokens) {
         Some(keyword)
     } else if let Some(block) = block(tokens) {
@@ -87,7 +64,12 @@ fn statement(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
 
 fn for_loop(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
     trace!("Entered for_loop");
-    continue_if_any_of!(tokens, TokenKind::For);
+
+    match tokens.get(0).map(|t| &t.kind) {
+        Some(TokenKind::For) => {}
+        _ => return None,
+    }
+
     tokens.pop_front().unwrap();
 
     let expr = expression(tokens).expect("Expected expression after for");
@@ -101,6 +83,19 @@ fn for_loop(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
         },
     }))
 }
+
+// fn range(tokens: &mut VecDeque<Token>) -> Option<Expr> {
+//     match tokens.get(0).map(|t| &t.kind) {
+//         Some(TokenKind::Range(start, end)) => {
+//             tokens.pop_front();
+//             Some(Expr::Range(Range {
+//                 start: *start,
+//                 end: *end,
+//             }))
+//         }
+//         _ => None,
+//     }
+// }
 
 fn declaration(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
     trace!("Entered declaration");
@@ -514,6 +509,7 @@ fn atom(tokens: &mut VecDeque<Token>) -> Option<Expr> {
             | TokenKind::Float(_)
             | TokenKind::String(_)
             | TokenKind::Bool(_)
+            | TokenKind::Range(_, _)
             | TokenKind::Ident(_) => {}
             TokenKind::Sub => {
                 expect(tokens, TokenKind::Sub);
@@ -539,6 +535,10 @@ fn atom(tokens: &mut VecDeque<Token>) -> Option<Expr> {
             }
             _ => return None,
         }
+
+        // if let Some(range) = range(tokens) {
+        //     return Some(range);
+        // }
 
         if let Some(input) = input(tokens) {
             return Some(input);

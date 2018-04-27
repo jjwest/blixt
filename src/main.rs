@@ -26,10 +26,15 @@ use std::fs::File;
 use std::io::Read;
 use std::process;
 
+struct Args {
+    source: Vec<char>,
+    filename: String,
+}
+
 fn main() {
     pretty_env_logger::init().unwrap();
 
-    let source = match parse_args() {
+    let args = match parse_args() {
         Ok(src) => src,
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -37,25 +42,22 @@ fn main() {
         }
     };
 
-    info!("START LEXER");
-    let tokens = lexer::generate_tokens(&source).unwrap_or_else(|e| {
-        print_error_message(e, &env::args().nth(1).unwrap(), &source);
+    let tokens = lexer::generate_tokens(&args.source).unwrap_or_else(|e| {
+        print_error_message(e, &args.filename, &args.source);
         process::exit(1);
     });
 
-    info!("START PARSE AST");
     let mut ast = parser::parse_ast(tokens).unwrap_or_else(|e| {
-        print_error_message(e, &env::args().nth(1).unwrap(), &source);
+        print_error_message(e, &args.filename, &args.source);
         process::exit(1);
     });
 
     debug!("{:#?}", ast);
-    info!("START INTERPRET");
     let mut interp = Interpreter::new();
     ast.accept(&mut interp);
 }
 
-fn parse_args() -> Result<Vec<char>, failure::Error> {
+fn parse_args() -> Result<Args, failure::Error> {
     let filename = env::args()
         .nth(1)
         .ok_or_else(|| err_msg("Missing file name"))?;
@@ -63,7 +65,12 @@ fn parse_args() -> Result<Vec<char>, failure::Error> {
     let mut buf = Vec::new();
     file.read_to_end(&mut buf)?;
 
-    Ok(buf.into_iter().map(|byte| byte as char).collect())
+    let args = Args {
+        source: buf.into_iter().map(|byte| byte as char).collect(),
+        filename,
+    };
+
+    Ok(args)
 }
 
 fn print_error_message(error: failure::Error, filename: &str, source: &[char]) {

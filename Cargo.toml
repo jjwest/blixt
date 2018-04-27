@@ -1,6 +1,6 @@
 [package]
-authors = ["Jonas Westlund <jonve547@student.liu.se>"]
-name = "gentlemen"
+authors = ["Jonas Westlund <jonaswestlund101@gmail.com>"]
+name = "photon"
 version = "0.1.0"
 [dependencies]
 failure = "0.1.0"

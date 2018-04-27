@@ -30,4 +30,6 @@ test_things_works()
 number := 5
 number += 4
 
+for i in 5..10
+
 print(number, 5 + 32)

@@ -15,6 +15,39 @@ pub struct Interpreter {
     curr_scope: usize,
 }
 
+struct Scope {
+    functions: HashMap<FuncName, FunctionDecl>,
+    variables: Vec<Variable>,
+    scope_level: usize,
+}
+
+struct Variable {
+    name: String,
+    value: Value,
+    defined_in_scope_level: usize,
+}
+
+impl Scope {
+    fn new() -> Scope {
+        Scope {
+            functions: HashMap::new(),
+            variables: Vec::new(),
+            scope_level: 0,
+        }
+    }
+
+    fn new_scope_level(&mut self) {
+        self.scope_level += 1;
+    }
+
+    fn pop_scope_level(&mut self) {
+        let curr_level = self.scope_level;
+        self.variables
+            .retain(|var| var.defined_in_scope_level != curr_level);
+        self.scope_level -= 1;
+    }
+}
+
 impl Interpreter {
     pub fn new() -> Self {
         Self {
@@ -95,39 +128,6 @@ impl Interpreter {
             Some(func) => Some(func.clone()),
             None => self.global_scope.functions.get(name).map(|f| f.clone()),
         }
-    }
-}
-
-struct Scope {
-    functions: HashMap<FuncName, FunctionDecl>,
-    variables: Vec<Variable>,
-    scope_level: usize,
-}
-
-struct Variable {
-    name: String,
-    value: Value,
-    defined_in_scope_level: usize,
-}
-
-impl Scope {
-    fn new() -> Scope {
-        Scope {
-            functions: HashMap::new(),
-            variables: Vec::new(),
-            scope_level: 0,
-        }
-    }
-
-    fn new_scope_level(&mut self) {
-        self.scope_level += 1;
-    }
-
-    fn pop_scope_level(&mut self) {
-        let curr_level = self.scope_level;
-        self.variables
-            .retain(|var| var.defined_in_scope_level != curr_level);
-        self.scope_level -= 1;
     }
 }
 

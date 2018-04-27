@@ -42,13 +42,14 @@ pub enum TokenKind {
     LesserEqual,
     NotEqual,
 
-    // Assign operators
+    // operators
     Assign,
     AddAssign,
     DivAssign,
     MulAssign,
     SubAssign,
     ModAssign,
+    Member,
 
     // Declarations
     VarDecl,
@@ -80,6 +81,7 @@ pub enum TokenKind {
     Return,
     While,
     FunctionDecl,
+    Range(i64, i64),
 
     Ident(String),
     Bool(bool),
@@ -175,7 +177,32 @@ impl<'a> Iterator for Lexer<'a> {
 
                 if let Some(character) = self.source.peek() {
                     if *character == '.' {
-                        number.push(self.source.next().unwrap());
+                        self.column += 1;
+                        self.source.next().unwrap();
+
+                        match self.source.peek() {
+                            Some(ch) if *ch == '.' => {
+                                let range_start = number.parse().unwrap();
+                                self.column += 1;
+                                self.source.next().unwrap();
+                                number.clear();
+                                number.extend(self.source.take_while_ref(|c| c.is_numeric()));
+
+                                let range_end = number.parse().unwrap();
+
+                                return Some(Ok(Token {
+                                    kind: TokenKind::Range(range_start, range_end),
+                                    line: self.line,
+                                    span: Span {
+                                        start,
+                                        len: self.column - start,
+                                    },
+                                }));
+                            }
+                            _ => {}
+                        }
+
+                        number.push('.');
                         number.extend(self.source.take_while_ref(|c| c.is_numeric()));
                         is_float = true;
                     }
@@ -331,7 +358,7 @@ mod tests {
     use super::*;
 
     fn assert_lex(source: &[u8], tokens: &[TokenKind]) {
-        let source: Vec<char> = source.iter().cloned().map(|c| c as char).collect();
+        let source: Vec<char> = source.iter().map(|c| *c as char).collect();
         let lexer = Lexer {
             line: 1,
             column: 1,
@@ -345,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lex_keywords() {
+    fn lex_keywords() {
         assert_lex(
             b"if else for return while fn",
             &[
@@ -354,13 +381,13 @@ mod tests {
                 TokenKind::For,
                 TokenKind::Return,
                 TokenKind::While,
-                TokenKind::Function,
+                TokenKind::FunctionDecl,
             ],
         )
     }
 
     #[test]
-    fn test_lex_binary_operators() {
+    fn lex_binary_logical_operators() {
         assert_lex(
             b"== > >= < <= !=",
             &[
@@ -375,7 +402,12 @@ mod tests {
     }
 
     #[test]
-    fn test_lex_assignment_operator() {
+    fn lex_unary_logical_operators() {
+        assert_lex(b" ! ", &[TokenKind::Not]);
+    }
+
+    #[test]
+    fn lex_assignment_operator() {
         assert_lex(
             b"= += -= *= /= %=",
             &[
@@ -390,7 +422,26 @@ mod tests {
     }
 
     #[test]
-    fn test_lex_assignment() {
+    fn lex_arithmetic_operators() {
+        assert_lex(
+            b" + - * / %",
+            &[
+                TokenKind::Add,
+                TokenKind::Sub,
+                TokenKind::Mul,
+                TokenKind::Div,
+                TokenKind::Mod,
+            ],
+        );
+    }
+
+    #[test]
+    fn lex_variable_declaration() {
+        assert_lex(b" := ", &[TokenKind::VarDecl]);
+    }
+
+    #[test]
+    fn lex_assignment() {
         assert_lex(
             b"age: int = 27",
             &[
@@ -404,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lex_comment() {
+    fn lex_comment() {
         assert_lex(
             b"hello // there friend\no",
             &[
@@ -412,5 +463,88 @@ mod tests {
                 TokenKind::Ident("o".to_owned()),
             ],
         )
+    }
+
+    #[test]
+    fn lex_range() {
+        assert_lex(b" 5..10", &[TokenKind::Range(5, 10)]);
+    }
+
+    #[test]
+    fn lex_int() {
+        assert_lex(b" 50 24", &[TokenKind::Integer(50), TokenKind::Integer(24)]);
+    }
+
+    #[test]
+    fn lex_float() {
+        assert_lex(
+            b" 34.2389 15.123",
+            &[TokenKind::Float(34.2389), TokenKind::Float(15.123)],
+        );
+    }
+
+    #[test]
+    fn lex_bool() {
+        assert_lex(
+            b"true false",
+            &[TokenKind::Bool(true), TokenKind::Bool(false)],
+        );
+    }
+
+    #[test]
+    fn lex_ident() {
+        assert_lex(
+            b"foo bar_Baz",
+            &[
+                TokenKind::Ident("foo".to_owned()),
+                TokenKind::Ident("bar_Baz".to_owned()),
+            ],
+        )
+    }
+
+    #[test]
+    fn lex_if_else() {
+        assert_lex(
+            b" if cool_things {} else true",
+            &[
+                TokenKind::If,
+                TokenKind::Ident("cool_things".to_owned()),
+                TokenKind::OpenBrace,
+                TokenKind::CloseBrace,
+                TokenKind::Else,
+                TokenKind::Bool(true),
+            ],
+        )
+    }
+
+    #[test]
+    fn lex_delimiters() {
+        assert_lex(
+            b" (){}[]:,;",
+            &[
+                TokenKind::OpenParen,
+                TokenKind::CloseParen,
+                TokenKind::OpenBrace,
+                TokenKind::CloseBrace,
+                TokenKind::OpenBracket,
+                TokenKind::CloseBracket,
+                TokenKind::Colon,
+                TokenKind::Comma,
+                TokenKind::SemiColon,
+            ],
+        )
+    }
+
+    #[test]
+    fn lex_types() {
+        assert_lex(
+            b"string float int bool",
+            &[
+                TokenKind::StringType,
+                TokenKind::FloatType,
+                TokenKind::IntType,
+                TokenKind::BoolType,
+            ],
+        );
     }
 }
