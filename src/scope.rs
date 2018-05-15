@@ -1,5 +1,5 @@
 use ast::FunctionDecl;
-use builtins::{Value, ValueKind};
+use primitives::{Value, ValueKind};
 
 use std::collections::HashMap;
 

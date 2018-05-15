@@ -7,7 +7,6 @@ use common::{Context, InternedString, Location, Span};
 use std::collections::VecDeque;
 use std::fs;
 use std::iter::Peekable;
-use std::path::Path;
 use std::vec::IntoIter;
 
 #[derive(Debug)]

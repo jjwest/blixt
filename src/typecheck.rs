@@ -2,8 +2,8 @@ use ast::{
     Assignment, AssignmentKind, Ast, BinaryOp, Decl, Expr, ExprKind, For, FunctionCall, If, Input,
     Print, Stmt, StmtList, UnaryOp, VarDecl,
 };
-use builtins::{Value, ValueKind};
 use common::{Context, Location};
+use primitives::{Value, ValueKind};
 use scope::Scope;
 use traits::{Visitable, Visitor};
 

@@ -3,9 +3,9 @@ use ast::{
     FunctionCall, FunctionDecl, If, Input, Param, ParamList, Print, Range, Stmt, UnaryOp,
     UnaryOpKind, VarDecl,
 };
-use builtins::ValueKind;
 use common::{Context, Location};
 use lexer::{Token, TokenKind};
+use primitives::ValueKind;
 
 use std::collections::VecDeque;
 use std::rc::Rc;

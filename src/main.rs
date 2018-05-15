@@ -9,11 +9,11 @@ extern crate itertools;
 extern crate pretty_env_logger;
 
 mod ast;
-mod builtins;
 mod common;
 mod interpreter;
 mod lexer;
 mod parser;
+mod primitives;
 mod scope;
 mod traits;
 mod typecheck;

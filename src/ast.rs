@@ -1,5 +1,5 @@
-use builtins::ValueKind;
 use common::Location;
+use primitives::ValueKind;
 use traits::{Visitable, Visitor};
 
 use std::rc::Rc;
