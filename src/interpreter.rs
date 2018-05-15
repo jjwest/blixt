@@ -252,7 +252,7 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
             .expect(&format!("Unknown ident {}", node.ident));
 
         match node.op {
-            AssignmentKind::Regular => *var = value,
+            AssignmentKind::Assign => *var = value,
             AssignmentKind::Add => *var += value,
             AssignmentKind::Sub => *var -= value,
             AssignmentKind::Mul => *var *= value,

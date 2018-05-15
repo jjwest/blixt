@@ -50,11 +50,12 @@ pub struct Assignment {
     pub ident: String,
     pub value: Expr,
     pub op: AssignmentKind,
+    pub location: Location,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum AssignmentKind {
-    Regular,
+    Assign,
     Add,
     Sub,
     Mul,
@@ -110,6 +111,7 @@ pub struct VarDecl {
     pub name: String,
     pub value: Expr,
     pub kind: ValueKind,
+    // pub location: Location,
 }
 
 #[derive(Debug, Clone)]

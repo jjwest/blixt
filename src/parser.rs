@@ -7,18 +7,48 @@ use common::{Context, Location};
 use lexer::{Token, TokenKind};
 use primitives::ValueKind;
 
+use failure;
+
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-pub fn parse_ast(tokens: VecDeque<Token>, context: &mut Context) -> Result<Ast, ()> {
+pub fn parse_ast(tokens: VecDeque<Token>, context: &mut Context) -> Result<Ast, failure::Error> {
+    let location = match tokens.get(0) {
+        Some(token) => token.location,
+        None => {
+            return Ok(Ast {
+                statements: Vec::new(),
+            })
+        }
+    };
+
     let mut parser = Parser {
         context,
         tokens,
-        location: Location::default(),
+        location,
     };
-    let statements = parser.statement_list()?;
+
+    let statements = match parser.statement_list() {
+        Ok(stmts) => stmts,
+        Err(_) => return Err(failure::err_msg("Parsing failed")),
+    };
 
     Ok(Ast { statements })
+}
+
+fn combine_locations(a: Location, b: Location) -> Location {
+    let (mut smaller, larger) = {
+        if a.span.start < b.span.start {
+            (a, b)
+        } else {
+            (b, a)
+        }
+    };
+
+    smaller.span.len +=
+        larger.span.start - (smaller.span.start + smaller.span.len) + larger.span.len;
+
+    smaller
 }
 
 struct Parser<'a> {
@@ -42,7 +72,9 @@ impl<'a> Parser<'a> {
 
     fn next_token(&mut self) -> Option<Token> {
         self.tokens.pop_front().map(|token| {
-            self.location = token.location;
+            if let Some(token) = self.peek_token(0) {
+                self.location = token.location;
+            }
             token
         })
     }
@@ -312,6 +344,7 @@ impl<'a> Parser<'a> {
             _ => return Ok(None),
         }
 
+        let mut location = self.location;
         let name = self.ident()?;
         let args = self.argument_list()?;
 
@@ -447,7 +480,7 @@ impl<'a> Parser<'a> {
         };
 
         let op = match self.peek_token_kind(1) {
-            Some(TokenKind::Assign) => AssignmentKind::Regular,
+            Some(TokenKind::Assign) => AssignmentKind::Assign,
             Some(TokenKind::AddAssign) => AssignmentKind::Add,
             Some(TokenKind::SubAssign) => AssignmentKind::Sub,
             Some(TokenKind::MulAssign) => AssignmentKind::Mul,
@@ -456,11 +489,18 @@ impl<'a> Parser<'a> {
             _ => return Ok(None),
         };
 
+        let location = self.location;
         let ident = self.ident()?;
         self.next_token();
         let value = self.expression()?.expect("Missing expr after assignment");
+        let location = combine_locations(location, value.location);
 
-        Ok(Some(Stmt::Assignment(Assignment { ident, value, op })))
+        Ok(Some(Stmt::Assignment(Assignment {
+            ident,
+            value,
+            op,
+            location,
+        })))
     }
 
     fn expression(&mut self) -> Result<Option<Expr>, ()> {
@@ -473,9 +513,10 @@ impl<'a> Parser<'a> {
                     _ => return Ok(Some(lhs)),
                 };
 
-                let token = self.next_token().unwrap();
-                let mut location = token.location;
+                self.next_token();
                 let rhs = self.expression()?.expect("No rhs in expression");
+
+                let mut location = lhs.location;
                 location.span.len += rhs.location.span.len;
 
                 let expr = Expr {
@@ -506,11 +547,10 @@ impl<'a> Parser<'a> {
                     _ => return Ok(Some(lhs)),
                 };
 
-                let token = self.next_token().unwrap();
-                let mut location = token.location;
-
+                self.next_token();
                 let rhs = self.logical_expr_a()?.expect("No rhs in expression");
-                location.span.len += rhs.location.span.len;
+
+                let location = combine_locations(lhs.location, rhs.location);
 
                 let expr = Expr {
                     location,
@@ -544,10 +584,9 @@ impl<'a> Parser<'a> {
                     _ => return Ok(Some(lhs)),
                 };
 
-                let token = self.next_token().unwrap();
-                let mut location = token.location;
+                self.next_token();
                 let rhs = self.logical_expr_b()?.expect("No rhs in expression");
-                location.span.len += rhs.location.span.len;
+                let location = combine_locations(lhs.location, rhs.location);
 
                 let expr = Expr {
                     location,
@@ -578,10 +617,9 @@ impl<'a> Parser<'a> {
                     _ => return Ok(Some(lhs)),
                 };
 
-                let token = self.next_token().unwrap();
-                let mut location = token.location;
+                self.next_token();
                 let rhs = self.factor()?.expect("No rhs in expression");
-                location.span.len += rhs.location.span.len;
+                let location = combine_locations(lhs.location, rhs.location);
 
                 let expr = Expr {
                     location,
@@ -613,10 +651,10 @@ impl<'a> Parser<'a> {
                     _ => return Ok(Some(lhs)),
                 };
 
-                let token = self.next_token().unwrap();
-                let mut location = token.location;
+                self.next_token();
                 let rhs = self.term()?.expect("No rhs in expression");
-                location.span.len += rhs.location.span.len;
+
+                let location = combine_locations(lhs.location, rhs.location);
 
                 let expr = Expr {
                     location,

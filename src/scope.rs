@@ -11,10 +11,10 @@ pub struct Scope<'ast> {
 }
 
 struct InnerScope<'ast> {
-    pub functions: HashMap<FuncName<'ast>, &'ast FunctionDecl>,
-    pub variables: Vec<Variable<'ast>>,
-    pub level: usize,
-    pub parent: Option<usize>,
+    functions: HashMap<FuncName<'ast>, &'ast FunctionDecl>,
+    variables: Vec<Variable<'ast>>,
+    level: usize,
+    parent: Option<usize>,
 }
 
 impl<'ast> InnerScope<'ast> {

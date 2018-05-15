@@ -7,6 +7,7 @@ extern crate failure_derive;
 extern crate log;
 extern crate itertools;
 extern crate pretty_env_logger;
+extern crate termcolor;
 
 mod ast;
 mod common;
@@ -21,15 +22,19 @@ mod typecheck;
 use common::Context;
 
 use std::env;
-use std::process;
 
 fn main() {
     pretty_env_logger::init().unwrap();
 
-    let source_file = env::args().nth(1).unwrap_or_else(|| {
-        eprintln!("Missing arg FILE");
-        process::exit(1);
-    });
+    if let Err(e) = run() {
+        eprintln!("{}", e);
+    }
+}
+
+fn run() -> Result<(), failure::Error> {
+    let source_file = env::args()
+        .nth(1)
+        .ok_or(failure::err_msg("Missing argument FILE"))?;
 
     let mut context = Context::new();
 
@@ -41,22 +46,15 @@ fn main() {
     }
 
     info!("Starting lexing");
-    let tokens = lexer::generate_tokens(&source_file, &mut context).unwrap_or_else(|err| {
-        eprintln!("Error lexing: {}", err);
-        process::exit(1);
-    });
+    let tokens = lexer::generate_tokens(&source_file, &mut context)?;
 
     info!("Starting parsing");
-    let ast = parser::parse_ast(tokens, &mut context).unwrap_or_else(|_| {
-        eprintln!("ERROR PARSING");
-        process::exit(1);
-    });
+    let ast = parser::parse_ast(tokens, &mut context)?;
 
     info!("Starting typechecking");
-    if let Err(_) = typecheck::typecheck(&ast, &mut context) {
-        eprintln!("Typechecking failed");
-        process::exit(1);
-    }
+    typecheck::typecheck(&ast, &mut context)?;
 
     interpreter::interpret(&ast, &mut context);
+
+    Ok(())
 }

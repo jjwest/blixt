@@ -7,14 +7,16 @@ use primitives::{Value, ValueKind};
 use scope::Scope;
 use traits::{Visitable, Visitor};
 
-pub fn typecheck(ast: &Ast, context: &mut Context) -> Result<(), ()> {
+use failure;
+
+pub fn typecheck(ast: &Ast, context: &mut Context) -> Result<(), failure::Error> {
     let mut checker = Typechecker::new(context);
     ast.accept(&mut checker);
 
     if checker.check_passed {
         Ok(())
     } else {
-        Err(())
+        Err(failure::err_msg("Typechecking failed"))
     }
 }
 
@@ -23,7 +25,7 @@ pub struct Typechecker<'a, 'ctxt> {
     check_passed: bool,
     scope: Scope<'a>,
     context: &'ctxt mut Context,
-    location: Location,
+    location: Vec<Location>,
 }
 
 impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
@@ -33,7 +35,7 @@ impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
             check_passed: true,
             scope: Scope::new(),
             context,
-            location: Location::default(),
+            location: Vec::new(),
         }
     }
 
@@ -45,7 +47,9 @@ impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
     }
 
     fn report_error(&mut self, message: &str) {
-        self.context.error(message, self.location);
+        self.types.push(ValueKind::Undecided);
+        let location = self.location[self.location.len() - 1];
+        self.context.error(message, location);
     }
 }
 
@@ -65,7 +69,7 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
 
     fn visit_expr(&mut self, node: &'a Expr) {
         trace!("Visiting expr");
-        self.location = node.location;
+        self.location.push(node.location);
 
         match &node.kind {
             ExprKind::Bool(_) => self.types.push(ValueKind::Bool),
@@ -79,6 +83,8 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
             ExprKind::BinaryOp(op) => self.visit_binary_op(op),
             ExprKind::FunctionCall(func) => self.visit_funcall(func),
         }
+
+        self.location.pop();
     }
 
     fn visit_decl(&mut self, node: &'a Decl) {
@@ -165,10 +171,12 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
     fn visit_assignment(&mut self, node: &'a Assignment) {
         trace!("Visiting assignment {} = {:#?}", node.ident, node.value);
 
+        self.location.push(node.location);
+
         let lhs = self.scope
             .get_variable(node.ident.as_str())
             .map(|var| var.kind)
-            .expect(&format!("{} has not been typechecked", node.ident));
+            .unwrap_or_else(|| panic!(format!("{} has not been typechecked", node.ident)));
 
         let rhs = self.type_of(&node.value);
 
@@ -178,12 +186,11 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
             (ValueKind::String, ValueKind::String) => self.types.push(ValueKind::String),
             (ValueKind::Float, ValueKind::Float) => self.types.push(ValueKind::Float),
             (ValueKind::Integer, ValueKind::Float) | (ValueKind::Float, ValueKind::Integer) => {
-                if node.op != AssignmentKind::Regular {
+                if node.op != AssignmentKind::Assign {
                     self.report_error(&format!(
                         "Invalid types {:?}, {:?} for operator {:?}",
                         lhs, rhs, node.op
                     ));
-                    self.types.push(ValueKind::Float);
                     self.check_passed = false;
                 }
             }
@@ -192,10 +199,11 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
                     "Invalid types {:?}, {:?} for operator {:?}",
                     a, b, node.op
                 ));
-                self.types.push(ValueKind::Float);
                 self.check_passed = false;
             }
         }
+
+        self.location.pop();
     }
 
     fn visit_print(&mut self, _node: &'a Print) {

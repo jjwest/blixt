@@ -182,7 +182,6 @@ impl Iterator for Lexer {
 
                 if let Some(character) = self.source.peek() {
                     if *character == '.' {
-                        self.column += 1;
                         self.source.next();
 
                         match self.source.peek() {

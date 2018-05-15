@@ -1,5 +1,8 @@
+use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub type InternedString = usize;
@@ -57,15 +60,39 @@ impl Context {
 
         let line = source.lines().nth(location.line - 1).expect("Invalid line");
         let prelude = format!("{}: Line {}: ", filename, location.line);
-        eprintln!("{}{}", prelude, line);
-        eprintln!(
-            "{:>prelude$}{:^>len$}",
-            " ",
-            " ",
-            prelude = prelude.len(),
-            len = location.span.len
-        );
-        eprintln!("{}\n", message);
+        let mut stderr = StandardStream::stderr(ColorChoice::Always);
+
+        writeln!(&mut stderr, "       | {}{}", prelude, line).unwrap();
+        stderr
+            .set_color(&ColorSpec::new().set_bold(true).set_fg(Some(Color::Red)))
+            .unwrap();
+        write!(&mut stderr, "Error: ").unwrap();
+        stderr.reset().unwrap();
+
+        write!(&mut stderr, "|").unwrap();
+
+        for _ in 0..prelude.len() {
+            write!(&mut stderr, " ").unwrap();
+        }
+
+        for _ in 0..location.span.start {
+            write!(&mut stderr, " ").unwrap();
+        }
+
+        for _ in 0..location.span.len {
+            write!(&mut stderr, "^").unwrap();
+        }
+
+        writeln!(&mut stderr).unwrap();
+        // writeln!(
+        //     &mut stderr,
+        //     " | {:>prelude$}{:^>len$}",
+        //     " ",
+        //     " ",
+        //     prelude = prelude.len(),
+        //     len = location.span.len
+        // ).unwrap();
+        writeln!(&mut stderr, "       | {}\n", message).unwrap();
 
         if self.debug_mode {
             panic!();
