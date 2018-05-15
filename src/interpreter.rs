@@ -1,214 +1,147 @@
-use ast::{Assignment, AssignmentKind, BinaryOp, BinaryOpKind, Decl, Expr, For, FunctionCall,
-          FunctionDecl, If, Input, Print, Stmt, StmtList, UnaryOp, UnaryOpKind};
-use builtins::Value;
-use traits::{AstVisitor, Visitable};
+use ast::{
+    Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, ExprKind, For,
+    FunctionCall, If, Input, Print, Stmt, StmtList, UnaryOp, UnaryOpKind,
+};
+use builtins::{Value, ValueKind};
+use common::Context;
+use scope::Scope;
+use traits::{Visitable, Visitor};
 
-use std::collections::HashMap;
+use std::fmt::Debug;
 use std::io::{self, Write};
 use std::rc::Rc;
 
-type FuncName = String;
-
-pub struct Interpreter {
-    global_scope: Scope,
-    scopes: Vec<Scope>,
-    curr_scope: usize,
+pub fn interpret(ast: &Ast, context: &mut Context) {
+    let mut interp = Interpreter::new(context);
+    ast.accept(&mut interp);
 }
 
-struct Scope {
-    functions: HashMap<FuncName, FunctionDecl>,
-    variables: Vec<Variable>,
-    scope_level: usize,
+struct Interpreter<'a, 'ctxt> {
+    scope: Scope<'a>,
+    values: Vec<Value>,
+    context: &'ctxt mut Context,
 }
 
-struct Variable {
-    name: String,
-    value: Value,
-    defined_in_scope_level: usize,
-}
-
-impl Scope {
-    fn new() -> Scope {
-        Scope {
-            functions: HashMap::new(),
-            variables: Vec::new(),
-            scope_level: 0,
-        }
-    }
-
-    fn new_scope_level(&mut self) {
-        self.scope_level += 1;
-    }
-
-    fn pop_scope_level(&mut self) {
-        let curr_level = self.scope_level;
-        self.variables
-            .retain(|var| var.defined_in_scope_level != curr_level);
-        self.scope_level -= 1;
-    }
-}
-
-impl Interpreter {
-    pub fn new() -> Self {
+impl<'a, 'ctxt> Interpreter<'a, 'ctxt> {
+    pub fn new(context: &'ctxt mut Context) -> Self {
         Self {
-            global_scope: Scope::new(),
-            scopes: vec![Scope::new()],
-            curr_scope: 0,
+            scope: Scope::new(),
+            values: Vec::new(),
+            context,
         }
     }
 
-    fn new_scope(&mut self) -> &mut Scope {
-        self.scopes.push(Scope::new());
-        self.curr_scope += 1;
-        &mut self.scopes[self.curr_scope]
-    }
-
-    fn pop_scope(&mut self) {
-        self.scopes.pop();
-        self.curr_scope -= 1;
-    }
-
-    fn curr_scope(&mut self) -> &mut Scope {
-        if self.curr_scope == 0 {
-            &mut self.global_scope
-        } else {
-            &mut self.scopes[self.curr_scope - 1]
-        }
-    }
-
-    fn add_variable(&mut self, name: String, value: Value) {
-        let scope = self.curr_scope();
-        scope.variables.push(Variable {
-            name,
-            value,
-            defined_in_scope_level: scope.scope_level,
-        })
-    }
-
-    fn get_variable(&mut self, name: &str) -> Option<Value> {
-        for var in self.curr_scope().variables.iter_mut().rev() {
-            if var.name == name {
-                return Some(var.value.clone());
-            }
-        }
-
-        for var in self.global_scope.variables.iter_mut().rev() {
-            if var.name == name {
-                return Some(var.value.clone());
-            }
-        }
-
-        None
-    }
-
-    fn get_variable_mut(&mut self, name: &str) -> Option<&mut Value> {
-        for var in self.curr_scope().variables.iter_mut().rev() {
-            if var.name == name {
-                return Some(&mut var.value);
-            }
-        }
-
-        for var in self.global_scope.variables.iter_mut().rev() {
-            if var.name == name {
-                return Some(&mut var.value);
-            }
-        }
-
-        None
-    }
-
-    fn add_function(&mut self, func: FunctionDecl) {
-        let scope = self.curr_scope();
-        scope.functions.insert(func.name.clone(), func);
-    }
-
-    fn get_function(&mut self, name: &str) -> Option<FunctionDecl> {
-        let scope = self.curr_scope();
-        match scope.functions.get(name) {
-            Some(func) => Some(func.clone()),
-            None => self.global_scope.functions.get(name).map(|f| f.clone()),
-        }
+    fn value_of<T: Debug + Visitable<'a>>(&mut self, node: &'a T) -> Value {
+        node.accept(self);
+        self.values
+            .pop()
+            .expect("Tried to get eval value that does not exist")
     }
 }
 
-impl AstVisitor for Interpreter {
-    fn visit_stmt_list(&mut self, node: &mut StmtList) -> Value {
+impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
+    fn visit_stmt_list(&mut self, node: &'a StmtList) {
         trace!("Visit stmt_list");
 
         for stmt in node {
-            if let Value::Return(val) = self.visit_stmt(stmt) {
-                return *val;
+            stmt.accept(self);
+            if let Some(Value::Return(_)) = self.values.get(0) {
+                break;
             }
         }
-
-        Value::Nil
     }
 
-    fn visit_stmt(&mut self, node: &mut Stmt) -> Value {
+    fn visit_stmt(&mut self, node: &'a Stmt) {
         trace!("Visit stmt");
         node.accept(self)
     }
 
-    fn visit_expr(&mut self, node: &mut Expr) -> Value {
+    fn visit_expr(&mut self, node: &'a Expr) {
         trace!("Visit expr");
 
-        match node {
-            Expr::Bool(v) => Value::Bool(*v),
-            Expr::Float(v) => Value::Float(*v),
-            Expr::Integer(v) => Value::Int(*v),
-            Expr::StringLiteral(v) => Value::String(v.clone()),
-            Expr::Ident(v) => self.visit_ident(v),
-            Expr::UnaryOp(v) => self.visit_unary_op(v),
-            Expr::BinaryOp(v) => self.visit_binary_op(v),
-            Expr::FunctionCall(v) => self.visit_funcall(v),
-            Expr::Input(v) => self.visit_input(v),
+        match &node.kind {
+            ExprKind::Bool(v) => self.values.push(Value::Bool(*v)),
+            ExprKind::Float(v) => self.values.push(Value::Float(*v)),
+            ExprKind::Integer(v) => self.values.push(Value::Int(*v)),
+            ExprKind::StringLiteral(v) => self.values.push(Value::String(v.clone())),
+            ExprKind::Ident(v) => self.visit_ident(v),
+            ExprKind::UnaryOp(v) => self.visit_unary_op(v),
+            ExprKind::BinaryOp(v) => self.visit_binary_op(v),
+            ExprKind::FunctionCall(v) => self.visit_funcall(v),
+            ExprKind::Input(v) => self.visit_input(v),
+            ExprKind::Range(_v) => unimplemented!(),
         }
     }
 
-    fn visit_decl(&mut self, node: &mut Decl) -> Value {
+    fn visit_decl(&mut self, node: &'a Decl) {
         trace!("Visit decl");
-        let node = node.clone();
 
         match node {
-            Decl::Function(func) => {
-                self.add_function(func);
-                Value::Nil
-            }
-            Decl::Variable(mut var) => {
-                let value = var.value.accept(self);
-                self.add_variable(var.name.clone(), value);
-                Value::Nil
+            Decl::Function(func) => self.scope.add_function(func),
+            Decl::Variable(ref var) => {
+                let value = self.value_of(&var.value);
+                self.scope.add_variable(&var.name, value, var.kind);
             }
         }
     }
 
-    fn visit_binary_op(&mut self, node: &mut BinaryOp) -> Value {
+    fn visit_binary_op(&mut self, node: &'a BinaryOp) {
         trace!("Visit binop");
+
         match node.op {
-            BinaryOpKind::Add => node.lhs.accept(self) + node.rhs.accept(self),
-            BinaryOpKind::Sub => node.lhs.accept(self) - node.rhs.accept(self),
-            BinaryOpKind::Mul => node.lhs.accept(self) * node.rhs.accept(self),
-            BinaryOpKind::Div => node.lhs.accept(self) / node.rhs.accept(self),
-            BinaryOpKind::Mod => node.lhs.accept(self) % node.rhs.accept(self),
-            BinaryOpKind::Equal => Value::Bool(node.lhs.accept(self) == node.rhs.accept(self)),
-            BinaryOpKind::NotEqual => Value::Bool(node.lhs.accept(self) != node.rhs.accept(self)),
-            BinaryOpKind::Lesser => Value::Bool(node.lhs.accept(self) < node.rhs.accept(self)),
+            BinaryOpKind::Add => {
+                let value = self.value_of(&*node.lhs) + self.value_of(&*node.rhs);
+                self.values.push(value);
+            }
+            BinaryOpKind::Sub => {
+                let value = self.value_of(&*node.lhs) - self.value_of(&*node.rhs);
+                self.values.push(value);
+            }
+            BinaryOpKind::Mul => {
+                let value = self.value_of(&*node.lhs) * self.value_of(&*node.rhs);
+                self.values.push(value);
+            }
+            BinaryOpKind::Div => {
+                let value = self.value_of(&*node.lhs) / self.value_of(&*node.rhs);
+                self.values.push(value);
+            }
+            BinaryOpKind::Mod => {
+                let value = self.value_of(&*node.lhs) % self.value_of(&*node.rhs);
+                self.values.push(value);
+            }
+            BinaryOpKind::Equal => {
+                let value = Value::Bool(self.value_of(&*node.lhs) == self.value_of(&*node.rhs));
+                self.values.push(value);
+            }
+            BinaryOpKind::NotEqual => {
+                let value = Value::Bool(self.value_of(&*node.lhs) != self.value_of(&*node.rhs));
+                self.values.push(value);
+            }
+            BinaryOpKind::Lesser => {
+                let value = Value::Bool(self.value_of(&*node.lhs) < self.value_of(&*node.rhs));
+                self.values.push(value);
+            }
             BinaryOpKind::LesserEqual => {
-                Value::Bool(node.lhs.accept(self) <= node.rhs.accept(self))
+                let value = Value::Bool(self.value_of(&*node.lhs) <= self.value_of(&*node.rhs));
+                self.values.push(value);
             }
-            BinaryOpKind::Greater => Value::Bool(node.lhs.accept(self) > node.rhs.accept(self)),
+            BinaryOpKind::Greater => {
+                let value = Value::Bool(self.value_of(&*node.lhs) > self.value_of(&*node.rhs));
+                self.values.push(value);
+            }
             BinaryOpKind::GreaterEqual => {
-                Value::Bool(node.lhs.accept(self) >= node.rhs.accept(self))
+                let value = Value::Bool(self.value_of(&*node.lhs) >= self.value_of(&*node.rhs));
+                self.values.push(value);
             }
-            BinaryOpKind::And => match (node.lhs.accept(self), node.rhs.accept(self)) {
-                (Value::Bool(a), Value::Bool(b)) => Value::Bool(a && b),
+            BinaryOpKind::And => match (self.value_of(&*node.lhs), self.value_of(&*node.rhs)) {
+                (Value::Bool(a), Value::Bool(b)) => self.values.push(Value::Bool(a && b)),
                 (a, b) => panic!(
                     "Can only use logical operators with bools AND, found {} {}",
                     a, b
                 ),
             },
-            BinaryOpKind::Or => match (node.lhs.accept(self), node.rhs.accept(self)) {
-                (Value::Bool(a), Value::Bool(b)) => Value::Bool(a || b),
+            BinaryOpKind::Or => match (self.value_of(&*node.lhs), self.value_of(&*node.rhs)) {
+                (Value::Bool(a), Value::Bool(b)) => self.values.push(Value::Bool(a || b)),
                 (a, b) => panic!(
                     "Can only use logical operators with bools OR, found {} {}",
                     a, b
@@ -217,30 +150,30 @@ impl AstVisitor for Interpreter {
         }
     }
 
-    fn visit_unary_op(&mut self, node: &mut UnaryOp) -> Value {
+    fn visit_unary_op(&mut self, node: &'a UnaryOp) {
+        trace!("Visit unary_op");
+
         match node.op {
-            UnaryOpKind::Not => match node.expr.accept(self) {
-                Value::Bool(n) => Value::Bool(!n),
+            UnaryOpKind::Not => match self.value_of(&*node.value) {
+                Value::Bool(n) => self.values.push(Value::Bool(!n)),
                 _ => panic!("Cannot negate non boolean expression"),
             },
-            UnaryOpKind::Neg => match node.expr.accept(self) {
-                Value::Int(n) => Value::Int(-n),
-                Value::Float(n) => Value::Float(-n),
+            UnaryOpKind::Neg => match self.value_of(&*node.value) {
+                Value::Int(n) => self.values.push(Value::Int(-n)),
+                Value::Float(n) => self.values.push(Value::Float(-n)),
                 Value::Bool(_) => panic!("Cannot have negative booleans"),
                 Value::String(_) => panic!("Cannot have negative strings"),
                 Value::Nil => panic!("Cannot have negative nil"),
-                _ => {
-                    println!("Tried to negate return value");
-                    Value::Nil
-                }
+                _ => println!("Tried to negate return value"),
             },
         }
     }
 
-    fn visit_funcall(&mut self, node: &mut FunctionCall) -> Value {
+    fn visit_funcall(&mut self, node: &'a FunctionCall) {
         trace!("Visit funcall");
 
-        let mut func = self.get_function(&node.name)
+        let func = self.scope
+            .get_function(&node.name)
             .expect(&format!("Unknown function {}", node.name));
 
         assert!(
@@ -252,58 +185,70 @@ impl AstVisitor for Interpreter {
             )
         );
 
-        let arg_values: Vec<Value> = node.args.iter_mut().map(|arg| arg.accept(self)).collect();
+        let arg_values: Vec<Value> = node.args.iter().map(|arg| self.value_of(arg)).collect();
 
-        self.new_scope();
+        self.scope.new_scope();
         for (param, value) in func.params.iter().zip(arg_values) {
-            self.add_variable(param.name.clone(), value);
+            let kind = match value {
+                Value::Bool(_) => ValueKind::Bool,
+                Value::Int(_) => ValueKind::Integer,
+                Value::Float(_) => ValueKind::Float,
+                Value::String(_) => ValueKind::String,
+                _ => ValueKind::Undecided,
+            };
+            self.scope.add_variable(&param.name, value, kind);
         }
 
         let result = func.body.accept(self);
-        self.pop_scope();
+        self.scope.pop_scope();
         result
     }
 
-    fn visit_if_stmt(&mut self, node: &mut If) -> Value {
-        trace!("Visit if stmt: {:?}", node);
+    fn visit_if_stmt(&mut self, node: &'a If) {
+        trace!("Visit if stmt");
 
-        let cond = node.cond.accept(self);
+        let cond = self.value_of(&node.cond);
         if cond == Value::Bool(true) {
-            node.body.accept(self)
-        } else if let Some(ref mut else_body) = node.else_body {
-            else_body.accept(self)
-        } else {
-            Value::Nil
+            node.body.accept(self);
+        } else if let Some(ref else_body) = node.else_body {
+            else_body.accept(self);
         }
     }
 
-    fn visit_ident(&mut self, node: &mut String) -> Value {
+    fn visit_ident(&mut self, node: &'a String) {
         trace!("Visit ident");
-        self.get_variable(&node)
-            .expect(&format!("Unknown ident {}", node))
+
+        let var = self.scope
+            .get_variable(&node)
+            .expect(&format!("Unknown ident {}", node));
+        self.values.push(var.value.clone());
     }
 
-    fn visit_return_stmt(&mut self, node: Option<&mut Expr>) -> Value {
-        trace!("Visit return: {:?}", node);
+    fn visit_return_stmt(&mut self, node: Option<&'a Expr>) {
+        trace!("Visit return");
         match node {
-            Some(expr) => Value::Return(Box::new(expr.accept(self))),
-            None => Value::Nil,
+            Some(expr) => {
+                let value = Value::Return(Box::new(self.value_of(expr)));
+                self.values.push(value);
+            }
+            None => self.values.push(Value::Nil),
         }
     }
 
-    fn visit_block(&mut self, node: &mut StmtList) -> Value {
+    fn visit_block(&mut self, node: &'a StmtList) {
         trace!("Visit block");
-        self.curr_scope().new_scope_level();
+        self.scope.new_scope_level();
         let result = self.visit_stmt_list(node);
-        self.curr_scope().pop_scope_level();
+        self.scope.pop_scope_level();
         result
     }
 
-    fn visit_assignment(&mut self, node: &mut Assignment) -> Value {
+    fn visit_assignment(&mut self, node: &'a Assignment) {
         trace!("Visit assignment");
 
-        let value = node.value.accept(self);
-        let var = self.get_variable_mut(&node.ident)
+        let value = self.value_of(&node.value);
+        let var = self.scope
+            .get_variable_mut(&node.ident)
             .expect(&format!("Unknown ident {}", node.ident));
 
         match node.op {
@@ -314,15 +259,13 @@ impl AstVisitor for Interpreter {
             AssignmentKind::Div => *var /= value,
             AssignmentKind::Mod => *var %= value,
         }
-
-        Value::Nil
     }
 
-    fn visit_print(&mut self, node: &mut Print) -> Value {
+    fn visit_print(&mut self, node: &'a Print) {
         trace!("Visit print");
 
-        if let Some(fmt_string) = node.args.get_mut(0) {
-            let fmt_string = match fmt_string.accept(self) {
+        if let Some(fmt_string) = node.args.get(0) {
+            let fmt_string = match self.value_of(fmt_string) {
                 Value::String(v) => v,
                 _ => panic!("Cannot print without format string"),
             };
@@ -345,19 +288,22 @@ impl AstVisitor for Interpreter {
                     escaped = true;
                 } else if ch == '%' {
                     match node.args
-                        .get_mut(num_fmt_args + 1)
-                        .map(|arg| arg.accept(self))
+                        .get(num_fmt_args + 1)
+                        .map(|arg| self.value_of(arg))
                     {
-                        Some(Value::String(s)) => {
-                            for ch in s.chars() {
-                                output.push(ch);
-                            }
-                        }
+                        Some(Value::String(n)) => output.extend(n.chars()),
                         Some(Value::Int(n)) => output.push_str(&format!("{}", n)),
                         Some(Value::Float(n)) => output.push_str(&format!("{}", n)),
                         Some(Value::Bool(n)) => output.push_str(&format!("{}", n)),
                         Some(Value::Nil) => output.push_str("nil"),
-                        Some(Value::Return(_)) => unreachable!(),
+                        Some(Value::Return(val)) => match *val {
+                            Value::Int(n) => output.push_str(&format!("{}", n)),
+                            Value::Float(n) => output.push_str(&format!("{}", n)),
+                            Value::Bool(n) => output.push_str(&format!("{}", n)),
+                            Value::Nil => output.push_str("nil"),
+                            Value::String(n) => output.extend(n.chars()),
+                            _ => unreachable!(),
+                        },
                         None => panic!("Expected format arg {}, but none found", num_fmt_args),
                     }
                     num_fmt_args += 1;
@@ -377,12 +323,12 @@ impl AstVisitor for Interpreter {
             print!("{}", output);
             io::stdout().flush().expect("Failed to flush stdout");
         }
-
-        Value::Nil
     }
 
-    fn visit_input(&mut self, node: &mut Input) -> Value {
-        match node.message.as_mut().map(|m| m.accept(self)) {
+    fn visit_input(&mut self, node: &'a Input) {
+        trace!("Visit input");
+
+        match node.message.as_ref().map(|m| self.value_of(&**m)) {
             Some(Value::String(v)) => {
                 print!("{}", v);
                 io::stdout().flush().expect("Failed to flush stdout");
@@ -398,10 +344,22 @@ impl AstVisitor for Interpreter {
 
         buf.pop(); // Remove newline
 
-        Value::String(Rc::new(buf))
+        self.values.push(Value::String(Rc::new(buf)));
     }
 
-    fn visit_for(&mut self, node: &mut For) -> Value {
-        Value::Nil
+    fn visit_for(&mut self, node: &'a For) {
+        trace!("Visit for");
+
+        self.scope.new_scope_level();
+        self.scope
+            .add_variable(&node.ident, Value::Int(0), ValueKind::Integer);
+
+        for i in node.range.start..node.range.end {
+            let var = self.scope.get_variable_mut(&node.ident).unwrap();
+            *var = Value::Int(i);
+            node.block.accept(self);
+        }
+
+        self.scope.pop_scope_level();
     }
 }

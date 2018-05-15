@@ -1,5 +1,6 @@
-use builtins::{Value, ValueKind};
-use traits::{AstVisitor, Visitable};
+use builtins::ValueKind;
+use common::Location;
+use traits::{Visitable, Visitor};
 
 use std::rc::Rc;
 
@@ -25,11 +26,18 @@ pub enum Stmt {
 }
 
 #[derive(Debug, Clone)]
-pub enum Expr {
+pub struct Expr {
+    pub location: Location,
+    pub kind: ExprKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExprKind {
     Float(f32),
     Integer(i32),
     StringLiteral(Rc<String>),
     Ident(String),
+    Range(Range),
     Input(Input),
     Bool(bool),
     UnaryOp(UnaryOp),
@@ -44,7 +52,7 @@ pub struct Assignment {
     pub op: AssignmentKind,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum AssignmentKind {
     Regular,
     Add,
@@ -56,7 +64,7 @@ pub enum AssignmentKind {
 
 #[derive(Debug, Clone)]
 pub struct UnaryOp {
-    pub expr: Box<Expr>,
+    pub value: Box<Expr>,
     pub op: UnaryOpKind,
 }
 
@@ -127,14 +135,15 @@ pub struct If {
 
 #[derive(Debug, Clone)]
 pub struct For {
-    pub iter: Expr,
+    pub ident: String,
+    pub range: Range,
     pub block: StmtList,
 }
 
 #[derive(Debug, Clone)]
 pub struct Range {
-    pub start: i64,
-    pub end: i64,
+    pub start: i32,
+    pub end: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -153,21 +162,21 @@ pub struct Input {
     pub message: Option<Box<Expr>>,
 }
 
-impl Visitable for Ast {
-    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+impl<'a> Visitable<'a> for Ast {
+    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
         self.statements.accept(visitor)
     }
 }
 
-impl Visitable for StmtList {
-    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+impl<'a> Visitable<'a> for StmtList {
+    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
         visitor.visit_stmt_list(self)
     }
 }
 
-impl Visitable for Stmt {
-    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
-        match self {
+impl<'a> Visitable<'a> for Stmt {
+    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
+        match &self {
             Stmt::Assignment(a) => visitor.visit_assignment(a),
             Stmt::Block(a) => visitor.visit_block(a),
             Stmt::Print(a) => visitor.visit_print(a),
@@ -175,43 +184,43 @@ impl Visitable for Stmt {
             Stmt::Expr(a) => visitor.visit_expr(a),
             Stmt::For(a) => visitor.visit_for(a),
             Stmt::If(a) => visitor.visit_if_stmt(a),
-            Stmt::Return(a) => visitor.visit_return_stmt(a.as_mut()),
+            Stmt::Return(a) => visitor.visit_return_stmt(a.as_ref()),
         }
     }
 }
 
-impl Visitable for Expr {
-    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+impl<'a> Visitable<'a> for Expr {
+    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
         visitor.visit_expr(self)
     }
 }
 
-impl Visitable for BinaryOp {
-    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+impl<'a> Visitable<'a> for BinaryOp {
+    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
         visitor.visit_binary_op(self)
     }
 }
 
-impl Visitable for UnaryOp {
-    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+impl<'a> Visitable<'a> for UnaryOp {
+    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
         visitor.visit_unary_op(self)
     }
 }
 
-impl Visitable for Decl {
-    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+impl<'a> Visitable<'a> for Decl {
+    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
         visitor.visit_decl(self)
     }
 }
 
-impl Visitable for FunctionCall {
-    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+impl<'a> Visitable<'a> for FunctionCall {
+    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
         visitor.visit_funcall(self)
     }
 }
 
-impl Visitable for If {
-    fn accept<V: AstVisitor>(&mut self, visitor: &mut V) -> Value {
+impl<'a> Visitable<'a> for If {
+    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
         visitor.visit_if_stmt(self)
     }
 }

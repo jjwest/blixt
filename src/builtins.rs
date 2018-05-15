@@ -59,6 +59,16 @@ impl AddAssign for Value {
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => *a = *a + b,
             (Value::Float(a), Value::Float(b)) => *a = *a + b,
+            value @ (Value::Float(_), Value::Int(_)) => {
+                if let (Value::Float(a), Value::Int(b)) = (&value.0, &value.1) {
+                    *value.0 = Value::Float(a + *b as f32);
+                }
+            }
+            value @ (Value::Int(_), Value::Float(_)) => {
+                if let (Value::Int(a), Value::Float(b)) = (&value.0, &value.1) {
+                    *value.0 = Value::Float(*a as f32 + b);
+                }
+            }
             (a, b) => panic!("Cannot add a {:?} with a {:?}", a, b),
         }
     }

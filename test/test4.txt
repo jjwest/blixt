@@ -30,6 +30,9 @@ test_things_works()
 number := 5
 number += 4
 
-for i in 5..10
+for i in 5..10 {
+    print("%\n", i)
+    number += 2
+}
 
-print(number, 5 + 32)
+print("Number is: %\n", number)

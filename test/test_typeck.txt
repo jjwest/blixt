@@ -1,0 +1,19 @@
+name := "Jonas"
+name += 3
+
+cool := 15 + "hej"
+
+age := 28
+age = "Jonas"
+
+age := 44
+age += 5.5
+
+a := 5.5
+a += 50
+
+fn things(a: string, b: int) {
+   c := a + b
+}
+
+things(name, age)

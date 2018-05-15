@@ -2,29 +2,18 @@ use failure;
 use itertools::Itertools;
 use log::LogLevel;
 
-use std::collections::VecDeque;
-use std::iter::{Cloned, Peekable};
-use std::slice::Iter;
+use common::{Context, InternedString, Location, Span};
 
-#[derive(Debug, Fail)]
-#[fail(display = "Placeholder")]
-pub struct Error {
-    pub line: usize,
-    pub span: Span,
-    pub message: String,
-}
+use std::collections::VecDeque;
+use std::fs;
+use std::iter::Peekable;
+use std::path::Path;
+use std::vec::IntoIter;
 
 #[derive(Debug)]
 pub struct Token {
     pub kind: TokenKind,
-    pub line: usize,
-    pub span: Span,
-}
-
-#[derive(Debug)]
-pub struct Span {
-    pub start: usize,
-    pub len: usize,
+    pub location: Location,
 }
 
 #[derive(Debug, PartialEq)]
@@ -81,7 +70,8 @@ pub enum TokenKind {
     Return,
     While,
     FunctionDecl,
-    Range(i64, i64),
+    Range(i32, i32),
+    In,
 
     Ident(String),
     Bool(bool),
@@ -96,17 +86,29 @@ pub enum TokenKind {
     StringType,
 }
 
-struct Lexer<'a> {
+#[derive(Debug, Fail)]
+#[fail(display = "Lexer error")]
+struct Error;
+
+struct Lexer {
     line: usize,
     column: usize,
-    source: Peekable<Cloned<Iter<'a, char>>>,
+    file: InternedString,
+    source: Peekable<IntoIter<char>>,
 }
 
-pub fn generate_tokens(source: &[char]) -> Result<VecDeque<Token>, failure::Error> {
+pub fn generate_tokens(
+    file: &str,
+    context: &mut Context,
+) -> Result<VecDeque<Token>, failure::Error> {
+    let interned = context.interner.intern(file);
+    let source: Vec<char> = fs::read(file)?.into_iter().map(|c| c as char).collect();
+
     let lexer = Lexer {
         line: 1,
+        file: interned,
         column: 1,
-        source: source.iter().cloned().peekable(),
+        source: source.into_iter().peekable(),
     };
 
     let tokens: Result<VecDeque<Token>, Error> = lexer.collect();
@@ -121,7 +123,7 @@ pub fn generate_tokens(source: &[char]) -> Result<VecDeque<Token>, failure::Erro
     Ok(tokens)
 }
 
-impl<'a> Iterator for Lexer<'a> {
+impl Iterator for Lexer {
     type Item = Result<Token, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -150,6 +152,7 @@ impl<'a> Iterator for Lexer<'a> {
                     "if" => TokenKind::If,
                     "else" => TokenKind::Else,
                     "for" => TokenKind::For,
+                    "in" => TokenKind::In,
                     "while" => TokenKind::While,
                     "fn" => TokenKind::FunctionDecl,
                     "return" => TokenKind::Return,
@@ -164,10 +167,13 @@ impl<'a> Iterator for Lexer<'a> {
 
                 Some(Ok(Token {
                     kind,
-                    line: self.line,
-                    span: Span {
-                        start,
-                        len: self.column - start,
+                    location: Location {
+                        line: self.line,
+                        file: self.file,
+                        span: Span {
+                            start,
+                            len: self.column - start,
+                        },
                     },
                 }))
             }
@@ -178,13 +184,13 @@ impl<'a> Iterator for Lexer<'a> {
                 if let Some(character) = self.source.peek() {
                     if *character == '.' {
                         self.column += 1;
-                        self.source.next().unwrap();
+                        self.source.next();
 
                         match self.source.peek() {
                             Some(ch) if *ch == '.' => {
                                 let range_start = number.parse().unwrap();
                                 self.column += 1;
-                                self.source.next().unwrap();
+                                self.source.next();
                                 number.clear();
                                 number.extend(self.source.take_while_ref(|c| c.is_numeric()));
 
@@ -192,10 +198,13 @@ impl<'a> Iterator for Lexer<'a> {
 
                                 return Some(Ok(Token {
                                     kind: TokenKind::Range(range_start, range_end),
-                                    line: self.line,
-                                    span: Span {
-                                        start,
-                                        len: self.column - start,
+                                    location: Location {
+                                        line: self.line,
+                                        file: self.file,
+                                        span: Span {
+                                            start,
+                                            len: self.column - start,
+                                        },
                                     },
                                 }));
                             }
@@ -218,10 +227,13 @@ impl<'a> Iterator for Lexer<'a> {
 
                 Some(Ok(Token {
                     kind,
-                    line: self.line,
-                    span: Span {
-                        start,
-                        len: self.column - start,
+                    location: Location {
+                        line: self.line,
+                        file: self.file,
+                        span: Span {
+                            start,
+                            len: self.column - start,
+                        },
                     },
                 }))
             }
@@ -237,10 +249,13 @@ impl<'a> Iterator for Lexer<'a> {
                 if operator == "->" {
                     return Some(Ok(Token {
                         kind: TokenKind::ReturnDecl,
-                        line: self.line,
-                        span: Span {
-                            start,
-                            len: self.column - start,
+                        location: Location {
+                            file: self.file,
+                            line: self.line,
+                            span: Span {
+                                start,
+                                len: self.column - start,
+                            },
                         },
                     }));
                 }
@@ -268,24 +283,18 @@ impl<'a> Iterator for Lexer<'a> {
                     "/" => TokenKind::Div,
                     "%" => TokenKind::Mod,
                     ":" => TokenKind::Colon,
-                    op => {
-                        return Some(Err(Error {
-                            line: self.line,
-                            span: Span {
-                                start,
-                                len: self.column - start,
-                            },
-                            message: format!("Invalid operator '{}'", op),
-                        }))
-                    }
+                    _op => return Some(Err(Error)),
                 };
 
                 Some(Ok(Token {
                     kind,
-                    line: self.line,
-                    span: Span {
-                        start,
-                        len: self.column - start,
+                    location: Location {
+                        line: self.line,
+                        file: self.file,
+                        span: Span {
+                            start,
+                            len: self.column - start,
+                        },
                     },
                 }))
             }
@@ -307,40 +316,46 @@ impl<'a> Iterator for Lexer<'a> {
 
                 Some(Ok(Token {
                     kind,
-                    line: self.line,
-                    span: Span {
-                        start,
-                        len: self.column - start,
+                    location: Location {
+                        file: self.file,
+                        line: self.line,
+                        span: Span {
+                            start,
+                            len: self.column - start,
+                        },
                     },
                 }))
             }
             '"' => {
                 self.source.next();
-                let string_literal: String = self.source.take_while_ref(|c| *c != '"').collect();
-                self.source.next();
+                let mut string_literal = String::new();
+                loop {
+                    string_literal.extend(self.source.take_while_ref(|c| *c != '"'));
+                    if string_literal.ends_with(r"\") {
+                        string_literal.push('"');
+                        self.source.next();
+                    } else {
+                        break;
+                    }
+                }
 
+                self.source.next();
                 self.column += string_literal.len() + 2;
 
                 Some(Ok(Token {
                     kind: TokenKind::String(string_literal),
-                    line: self.line,
-                    span: Span {
-                        start,
-                        len: self.column - start,
+                    location: Location {
+                        file: self.file,
+                        line: self.line,
+                        span: Span {
+                            start,
+                            len: self.column - start,
+                        },
                     },
                 }))
             }
             '\0' => None,
-            _ => Some(Err(Error {
-                line: self.line,
-                span: Span { start, len: 1 },
-                message: format!(
-                    "Unexpected token: {}",
-                    self.source
-                        .take_while_ref(|c| !c.is_whitespace())
-                        .collect::<String>()
-                ),
-            })),
+            _ => Some(Err(Error)),
         }
     }
 }

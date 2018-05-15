@@ -1,12 +1,20 @@
-name: string = "Jonas"
-age := 27
-height := 125.3
-is_programmer := true
+fn main() {
+   name := "Jonas"
+   age := 28
+   phrase := input("Enter your catchphrase: ")
 
-fn hello(name: string, age: int, is_programmer: bool) {
-   if is_programmer {
-      age *= 2
-   }
+   present(name, age, phrase)
+   a := 12
+   b := 4
+   print("% is a multiple of %? %\n", a, b, is_multiple(a, b))
 }
 
-print(hello(name, age, is_programmer))
+fn present(name: string, age: int, phrase: string) {
+   print("% is % years old and usually says \"%\"\n", name, age, phrase)
+}
+
+fn is_multiple(a: int, b: int) -> bool {
+   return a % b == 0
+}
+
+main()
