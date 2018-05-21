@@ -1,4 +1,4 @@
-use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+use termcolor::{BufferWriter, Color, ColorChoice, ColorSpec, WriteColor};
 
 use std::collections::HashMap;
 use std::fs;
@@ -51,48 +51,61 @@ impl Context {
         let source = match self.source_code.get(Path::new(filename)) {
             Some(source) => source,
             None => {
-                let src = fs::read_to_string(filename)
-                    .expect(&format!("Failed to open source file {}", filename));
+                let src = fs::read_to_string(filename).unwrap();
                 self.source_code.insert(PathBuf::from(filename), src);
                 self.source_code.get(Path::new(filename)).unwrap()
             }
         };
 
+        let stderr = BufferWriter::stderr(ColorChoice::Always);
+        let mut buf = stderr.buffer();
+
         let line = source.lines().nth(location.line - 1).expect("Invalid line");
         let prelude = format!("{}: Line {}: ", filename, location.line);
-        let mut stderr = StandardStream::stderr(ColorChoice::Always);
 
-        writeln!(&mut stderr, "       | {}{}", prelude, line).unwrap();
-        stderr
-            .set_color(&ColorSpec::new().set_bold(true).set_fg(Some(Color::Red)))
-            .unwrap();
-        write!(&mut stderr, "Error: ").unwrap();
-        stderr.reset().unwrap();
+        writeln!(&mut buf, "       | {}{}", prelude, line).unwrap();
 
-        write!(&mut stderr, "|").unwrap();
-
-        for _ in 0..prelude.len() {
-            write!(&mut stderr, " ").unwrap();
+        if buf.supports_color() {
+            buf.set_color(&ColorSpec::new().set_bold(true).set_fg(Some(Color::Red)))
+                .unwrap();
+            write!(&mut buf, "Error: ").unwrap();
+            buf.reset().unwrap();
+        } else {
+            write!(&mut buf, "Error: ").unwrap();
         }
 
-        for _ in 0..location.span.start {
-            write!(&mut stderr, " ").unwrap();
+        write!(&mut buf, "|").unwrap();
+
+        for _ in 0..prelude.len() + location.span.start {
+            write!(&mut buf, " ").unwrap();
         }
 
-        for _ in 0..location.span.len {
-            write!(&mut stderr, "^").unwrap();
+        if buf.supports_color() {
+            buf.set_color(&ColorSpec::new().set_bold(true).set_fg(Some(Color::Blue)))
+                .unwrap();
+
+            for _ in 0..location.span.len {
+                write!(&mut buf, "^").unwrap();
+            }
+
+            buf.reset().unwrap();
+        } else {
+            for _ in 0..location.span.len {
+                write!(&mut buf, "^").unwrap();
+            }
         }
 
-        writeln!(&mut stderr).unwrap();
-        // writeln!(
-        //     &mut stderr,
-        //     " | {:>prelude$}{:^>len$}",
-        //     " ",
-        //     " ",
-        //     prelude = prelude.len(),
-        //     len = location.span.len
-        // ).unwrap();
-        writeln!(&mut stderr, "       | {}\n", message).unwrap();
+        writeln!(&mut buf).unwrap();
+
+        if buf.supports_color() {
+            buf.set_color(&ColorSpec::new().set_bold(true)).unwrap();
+            writeln!(&mut buf, "       | {}\n\n", message).unwrap();
+            buf.reset().unwrap();
+        } else {
+            writeln!(&mut buf, "       | {}\n\n", message).unwrap();
+        }
+
+        stderr.print(&buf).unwrap();
 
         if self.debug_mode {
             panic!();

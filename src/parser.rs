@@ -30,13 +30,13 @@ pub fn parse_ast(tokens: VecDeque<Token>, context: &mut Context) -> Result<Ast, 
 
     let statements = match parser.statement_list() {
         Ok(stmts) => stmts,
-        Err(_) => return Err(failure::err_msg("Parsing failed")),
+        Err(_) => return Err(failure::err_msg("")),
     };
 
     Ok(Ast { statements })
 }
 
-fn combine_locations(a: Location, b: Location) -> Location {
+fn join_locations(a: Location, b: Location) -> Location {
     let (mut smaller, larger) = {
         if a.span.start < b.span.start {
             (a, b)
@@ -228,7 +228,7 @@ impl<'a> Parser<'a> {
                     return Err(());
                 }
             },
-            Some(TokenKind::VarDecl) => ValueKind::Undecided,
+            Some(TokenKind::VarDecl) => ValueKind::Nil,
             other => {
                 self.report_error(&format!(
                     "Expected type or declaration operator, found {:?}",
@@ -238,17 +238,24 @@ impl<'a> Parser<'a> {
             }
         };
 
-        if var_type != ValueKind::Undecided {
+        if var_type != ValueKind::Nil {
             self.expect_next(TokenKind::Assign)?;
         }
 
-        let value = match self.expression()? {
+        let mut value = match self.expression()? {
             Some(expr) => expr,
             None => {
                 self.report_error("Expected expression");
                 return Err(());
             }
         };
+
+        match (var_type, &value.kind) {
+            (ValueKind::Float, ExprKind::Integer(n)) => {
+                value.kind = ExprKind::Float(*n as f32);
+            }
+            _ => {}
+        }
 
         Ok(Some(Stmt::Decl(Decl::Variable(VarDecl {
             name: ident,
@@ -307,7 +314,13 @@ impl<'a> Parser<'a> {
                     self.next_token();
                     break;
                 }
-                _ => unreachable!(),
+                other => {
+                    self.report_error(&format!(
+                        "Expected identifier or closing parenthesis, found {:?}",
+                        other
+                    ));
+                    return Err(());
+                }
             }
 
             let name = self.ident().expect("Expected ident");
@@ -330,7 +343,10 @@ impl<'a> Parser<'a> {
                 if token.kind == TokenKind::CloseParen {
                     break;
                 } else if token.kind != TokenKind::Comma {
-                    panic!("Expected comma or closeparen in param list");
+                    self.report_error(&format!(
+                        "Expected comma or closing parenthesis, found {:?}",
+                        token.kind
+                    ));
                 }
             }
         }
@@ -348,8 +364,15 @@ impl<'a> Parser<'a> {
         let name = self.ident()?;
         let args = self.argument_list()?;
 
+        for arg in &args {
+            location = join_locations(location, arg.location);
+        }
+
+        // Include the closing parenthesis
+        location.span.len += 1;
+
         let funcall = Expr {
-            location: self.location,
+            location,
             kind: ExprKind::FunctionCall(FunctionCall { name, args }),
         };
 
@@ -492,8 +515,15 @@ impl<'a> Parser<'a> {
         let location = self.location;
         let ident = self.ident()?;
         self.next_token();
-        let value = self.expression()?.expect("Missing expr after assignment");
-        let location = combine_locations(location, value.location);
+        let value = match self.expression()? {
+            Some(expr) => expr,
+            None => {
+                self.report_error("Missing expr after assignment");
+                return Err(());
+            }
+        };
+
+        let location = join_locations(location, value.location);
 
         Ok(Some(Stmt::Assignment(Assignment {
             ident,
@@ -550,7 +580,7 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 let rhs = self.logical_expr_a()?.expect("No rhs in expression");
 
-                let location = combine_locations(lhs.location, rhs.location);
+                let location = join_locations(lhs.location, rhs.location);
 
                 let expr = Expr {
                     location,
@@ -586,7 +616,7 @@ impl<'a> Parser<'a> {
 
                 self.next_token();
                 let rhs = self.logical_expr_b()?.expect("No rhs in expression");
-                let location = combine_locations(lhs.location, rhs.location);
+                let location = join_locations(lhs.location, rhs.location);
 
                 let expr = Expr {
                     location,
@@ -619,7 +649,7 @@ impl<'a> Parser<'a> {
 
                 self.next_token();
                 let rhs = self.factor()?.expect("No rhs in expression");
-                let location = combine_locations(lhs.location, rhs.location);
+                let location = join_locations(lhs.location, rhs.location);
 
                 let expr = Expr {
                     location,
@@ -654,7 +684,7 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 let rhs = self.term()?.expect("No rhs in expression");
 
-                let location = combine_locations(lhs.location, rhs.location);
+                let location = join_locations(lhs.location, rhs.location);
 
                 let expr = Expr {
                     location,

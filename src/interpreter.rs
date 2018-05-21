@@ -2,7 +2,7 @@ use ast::{
     Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, ExprKind, For,
     FunctionCall, If, Input, Print, Stmt, StmtList, UnaryOp, UnaryOpKind,
 };
-use common::Context;
+use common::{Context, Location};
 use primitives::{Value, ValueKind};
 use scope::Scope;
 use traits::{Visitable, Visitor};
@@ -20,6 +20,7 @@ struct Interpreter<'a, 'ctxt> {
     scope: Scope<'a>,
     values: Vec<Value>,
     context: &'ctxt mut Context,
+    location: Vec<Location>,
 }
 
 impl<'a, 'ctxt> Interpreter<'a, 'ctxt> {
@@ -28,6 +29,7 @@ impl<'a, 'ctxt> Interpreter<'a, 'ctxt> {
             scope: Scope::new(),
             values: Vec::new(),
             context,
+            location: Vec::new(),
         }
     }
 
@@ -36,6 +38,11 @@ impl<'a, 'ctxt> Interpreter<'a, 'ctxt> {
         self.values
             .pop()
             .expect("Tried to get eval value that does not exist")
+    }
+
+    fn report_error(&mut self, message: &str) {
+        self.context
+            .error(message, self.location[self.location.len() - 1]);
     }
 }
 
@@ -58,6 +65,7 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
 
     fn visit_expr(&mut self, node: &'a Expr) {
         trace!("Visit expr");
+        self.location.push(node.location);
 
         match &node.kind {
             ExprKind::Bool(v) => self.values.push(Value::Bool(*v)),
@@ -71,6 +79,8 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
             ExprKind::Input(v) => self.visit_input(v),
             ExprKind::Range(_v) => unimplemented!(),
         }
+
+        self.location.pop();
     }
 
     fn visit_decl(&mut self, node: &'a Decl) {
@@ -135,17 +145,17 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
             }
             BinaryOpKind::And => match (self.value_of(&*node.lhs), self.value_of(&*node.rhs)) {
                 (Value::Bool(a), Value::Bool(b)) => self.values.push(Value::Bool(a && b)),
-                (a, b) => panic!(
-                    "Can only use logical operators with bools AND, found {} {}",
+                (a, b) => self.report_error(&format!(
+                    "Can only use logical operator AND with bools, found {} {}",
                     a, b
-                ),
+                )),
             },
             BinaryOpKind::Or => match (self.value_of(&*node.lhs), self.value_of(&*node.rhs)) {
                 (Value::Bool(a), Value::Bool(b)) => self.values.push(Value::Bool(a || b)),
-                (a, b) => panic!(
+                (a, b) => self.report_error(&format!(
                     "Can only use logical operators with bools OR, found {} {}",
                     a, b
-                ),
+                )),
             },
         }
     }
@@ -161,9 +171,9 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
             UnaryOpKind::Neg => match self.value_of(&*node.value) {
                 Value::Int(n) => self.values.push(Value::Int(-n)),
                 Value::Float(n) => self.values.push(Value::Float(-n)),
-                Value::Bool(_) => panic!("Cannot have negative booleans"),
-                Value::String(_) => panic!("Cannot have negative strings"),
-                Value::Nil => panic!("Cannot have negative nil"),
+                Value::Bool(_) => self.report_error("Cannot have negative booleans"),
+                Value::String(_) => self.report_error("Cannot have negative strings"),
+                Value::Nil => self.report_error("Cannot have negative nil"),
                 _ => println!("Tried to negate return value"),
             },
         }
@@ -172,7 +182,8 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
     fn visit_funcall(&mut self, node: &'a FunctionCall) {
         trace!("Visit funcall");
 
-        let func = self.scope
+        let func = self
+            .scope
             .get_function(&node.name)
             .expect(&format!("Unknown function {}", node.name));
 
@@ -194,7 +205,7 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
                 Value::Int(_) => ValueKind::Integer,
                 Value::Float(_) => ValueKind::Float,
                 Value::String(_) => ValueKind::String,
-                _ => ValueKind::Undecided,
+                _ => ValueKind::Nil,
             };
             self.scope.add_variable(&param.name, value, kind);
         }
@@ -218,7 +229,8 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
     fn visit_ident(&mut self, node: &'a String) {
         trace!("Visit ident");
 
-        let var = self.scope
+        let var = self
+            .scope
             .get_variable(&node)
             .expect(&format!("Unknown ident {}", node));
         self.values.push(var.value.clone());
@@ -247,7 +259,8 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
         trace!("Visit assignment");
 
         let value = self.value_of(&node.value);
-        let var = self.scope
+        let var = self
+            .scope
             .get_variable_mut(&node.ident)
             .expect(&format!("Unknown ident {}", node.ident));
 
@@ -287,7 +300,8 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
                 } else if ch == '\\' {
                     escaped = true;
                 } else if ch == '%' {
-                    match node.args
+                    match node
+                        .args
                         .get(num_fmt_args + 1)
                         .map(|arg| self.value_of(arg))
                     {

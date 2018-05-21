@@ -141,7 +141,8 @@ impl Iterator for Lexer {
                 self.next()
             }
             c if c.is_alphabetic() => {
-                let word: String = self.source
+                let word: String = self
+                    .source
                     .take_while_ref(|c| c.is_alphanumeric() || *c == '_')
                     .collect();
 

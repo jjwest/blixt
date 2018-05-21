@@ -131,6 +131,8 @@ impl<'ast> Scope<'ast> {
 
             if let Some(parent) = scope.parent {
                 scope = &mut self.scopes[parent];
+            } else {
+                return None;
             }
         }
     }

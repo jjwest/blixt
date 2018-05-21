@@ -1,3 +1,4 @@
+
 fn present_person(name: string, age: int) {
    print("% is % years old\n", name, age)
 }

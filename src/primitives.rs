@@ -8,7 +8,7 @@ pub enum ValueKind {
     String,
     Integer,
     Float,
-    Undecided,
+    Nil,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -67,6 +67,13 @@ impl AddAssign for Value {
             value @ (Value::Int(_), Value::Float(_)) => {
                 if let (Value::Int(a), Value::Float(b)) = (&value.0, &value.1) {
                     *value.0 = Value::Float(*a as f32 + b);
+                }
+            }
+            value @ (Value::String(_), Value::String(_)) => {
+                if let (Value::String(a), Value::String(b)) = (&value.0, &value.1) {
+                    let mut new = (**a).clone();
+                    new.extend(b.chars());
+                    *value.0 = Value::String(Rc::new(new));
                 }
             }
             (a, b) => panic!("Cannot add a {:?} with a {:?}", a, b),

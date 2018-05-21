@@ -3,7 +3,7 @@ name := "Jonas" + 3
 name := "Jonas"
 name += 3
 
-cool := 15 + "hej"
+cool := 15 +  9 - "hej"
 
 age := 28
 age = "Jonas"
@@ -19,3 +19,4 @@ fn things(a: string, b: int) {
 }
 
 things(name, age)
+things(age, name)

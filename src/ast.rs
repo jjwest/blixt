@@ -215,12 +215,6 @@ impl<'a> Visitable<'a> for Decl {
     }
 }
 
-impl<'a> Visitable<'a> for FunctionCall {
-    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
-        visitor.visit_funcall(self)
-    }
-}
-
 impl<'a> Visitable<'a> for If {
     fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
         visitor.visit_if_stmt(self)

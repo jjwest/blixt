@@ -13,10 +13,14 @@ pub fn typecheck(ast: &Ast, context: &mut Context) -> Result<(), failure::Error>
     let mut checker = Typechecker::new(context);
     ast.accept(&mut checker);
 
+    if checker.deferred_funcalls.len() > 0 {
+        checker.check_deferred_funcalls();
+    }
+
     if checker.check_passed {
         Ok(())
     } else {
-        Err(failure::err_msg("Typechecking failed"))
+        Err(failure::err_msg(""))
     }
 }
 
@@ -26,6 +30,7 @@ pub struct Typechecker<'a, 'ctxt> {
     scope: Scope<'a>,
     context: &'ctxt mut Context,
     location: Vec<Location>,
+    deferred_funcalls: Vec<&'a FunctionCall>,
 }
 
 impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
@@ -34,8 +39,9 @@ impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
             types: Vec::new(),
             check_passed: true,
             scope: Scope::new(),
-            context,
             location: Vec::new(),
+            context,
+            deferred_funcalls: Vec::new(),
         }
     }
 
@@ -47,9 +53,29 @@ impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
     }
 
     fn report_error(&mut self, message: &str) {
-        self.types.push(ValueKind::Undecided);
+        self.types.push(ValueKind::Nil);
         let location = self.location[self.location.len() - 1];
         self.context.error(message, location);
+    }
+
+    fn check_deferred_funcalls(&mut self) {
+        let checks = self.deferred_funcalls.clone();
+        for node in checks {
+            self.scope.new_scope();
+            match self.scope.get_function(&node.name) {
+                Some(func) => {
+                    for param in &func.params {
+                        self.scope.add_variable(&param.name, Value::Nil, param.kind);
+                    }
+                    self.visit_funcall(node);
+                }
+                None => {
+                    self.report_error(&format!("Undefined function '{}", node.name));
+                    self.check_passed = false;
+                }
+            }
+            self.scope.pop_scope();
+        }
     }
 }
 
@@ -68,7 +94,7 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
     }
 
     fn visit_expr(&mut self, node: &'a Expr) {
-        trace!("Visiting expr");
+        trace!("Visiting expr {:#?}", node);
         self.location.push(node.location);
 
         match &node.kind {
@@ -92,7 +118,7 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
 
         match node {
             Decl::Variable(VarDecl { name, value, kind }) => {
-                if *kind == ValueKind::Undecided {
+                if *kind == ValueKind::Nil {
                     let kind = self.type_of(value);
                     self.scope.add_variable(name, Value::Nil, kind);
                 }
@@ -124,6 +150,7 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
             (ValueKind::Float, ValueKind::Float)
             | (ValueKind::Integer, ValueKind::Float)
             | (ValueKind::Float, ValueKind::Integer) => self.types.push(ValueKind::Float),
+            (ValueKind::Nil, _) | (_, ValueKind::Nil) => {}
             (a, b) => {
                 self.report_error(&format!(
                     "Invalid types {:?}, {:?} for operator {:?}",
@@ -141,8 +168,41 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
         self.types.push(type_);
     }
 
-    fn visit_funcall(&mut self, _node: &'a FunctionCall) {
+    fn visit_funcall(&mut self, node: &'a FunctionCall) {
         trace!("Visiting funcall");
+
+        let function = match self.scope.get_function(&node.name) {
+            Some(func) => func,
+            None => {
+                self.deferred_funcalls.push(node);
+                return;
+            }
+        };
+
+        if node.args.len() != function.params.len() {
+            self.report_error(&format!(
+                "Expected {} arguments, found {}",
+                node.args.len(),
+                function.params.len()
+            ));
+            self.check_passed = false;
+        }
+
+        for (arg, param) in node.args.iter().zip(function.params.iter()) {
+            let arg_type = self.type_of(arg);
+            // If the argument type is still undecided it means
+            // the variable was never declared, so no check is done.
+            // An error message is printed via type_of -> node.accept -> visit_ident
+            if arg_type != ValueKind::Nil && arg_type != param.kind {
+                self.location.push(arg.location);
+                self.report_error(&format!("Expected {:?}, found {:?}", param.kind, arg_type));
+                self.check_passed = false;
+                self.location.pop();
+            }
+        }
+
+        self.types
+            .push(function.return_type.unwrap_or(ValueKind::Nil));
     }
 
     fn visit_if_stmt(&mut self, _node: &'a If) {
@@ -154,7 +214,7 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
         match self.scope.get_variable(node.as_str()) {
             Some(var) => self.types.push(var.kind),
             None => {
-                self.report_error(&format!("Ident {} has not been typechecked", node));
+                self.report_error(&format!("Undeclared variable '{}'", node));
                 self.check_passed = false;
             }
         }
@@ -173,7 +233,8 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
 
         self.location.push(node.location);
 
-        let lhs = self.scope
+        let lhs = self
+            .scope
             .get_variable(node.ident.as_str())
             .map(|var| var.kind)
             .unwrap_or_else(|| panic!(format!("{} has not been typechecked", node.ident)));
