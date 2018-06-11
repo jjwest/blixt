@@ -77,17 +77,17 @@ impl<'ast> Scope<'ast> {
     }
 
     pub fn get_variable(&mut self, name: &'ast str) -> Option<&Variable> {
-        let mut scope = &mut self.scopes[self.curr_scope];
+        let mut scope = &self.scopes[self.curr_scope];
 
         loop {
-            for var in scope.variables.iter_mut().rev() {
+            for var in scope.variables.iter().rev() {
                 if var.name == name {
                     return Some(var);
                 }
             }
 
             if let Some(parent) = scope.parent {
-                scope = &mut self.scopes[parent];
+                scope = &self.scopes[parent];
             } else {
                 break;
             }

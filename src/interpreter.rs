@@ -1,13 +1,13 @@
 use ast::{
     Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, ExprKind, For,
-    FunctionCall, If, Input, Print, Stmt, StmtList, UnaryOp, UnaryOpKind,
+    FunctionCall, If, Input, Print, Return, Stmt, StmtList, UnaryOp, UnaryOpKind,
 };
-use common::{Context, Location};
+use context::Context;
+use location::Location;
 use primitives::{Value, ValueKind};
 use scope::Scope;
 use traits::{Visitable, Visitor};
 
-use std::fmt::Debug;
 use std::io::{self, Write};
 use std::rc::Rc;
 
@@ -33,11 +33,9 @@ impl<'a, 'ctxt> Interpreter<'a, 'ctxt> {
         }
     }
 
-    fn value_of<T: Debug + Visitable<'a>>(&mut self, node: &'a T) -> Value {
+    fn value_of<T: Visitable<'a>>(&mut self, node: &'a T) -> Value {
         node.accept(self);
-        self.values
-            .pop()
-            .expect("Tried to get eval value that does not exist")
+        self.values.pop().unwrap_or(Value::Nil)
     }
 
     fn report_error(&mut self, message: &str) {
@@ -236,14 +234,12 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
         self.values.push(var.value.clone());
     }
 
-    fn visit_return_stmt(&mut self, node: Option<&'a Expr>) {
+    fn visit_return(&mut self, node: &'a Return) {
         trace!("Visit return");
-        match node {
-            Some(expr) => {
-                let value = Value::Return(Box::new(self.value_of(expr)));
-                self.values.push(value);
-            }
-            None => self.values.push(Value::Nil),
+
+        if let Some(ref expr) = node.value {
+            let value = Value::Return(Box::new(self.value_of(expr)));
+            self.values.push(value);
         }
     }
 

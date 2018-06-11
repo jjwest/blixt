@@ -10,16 +10,17 @@ extern crate pretty_env_logger;
 extern crate termcolor;
 
 mod ast;
-mod common;
+mod context;
 mod interpreter;
 mod lexer;
+mod location;
 mod parser;
 mod primitives;
 mod scope;
 mod traits;
 mod typecheck;
 
-use common::Context;
+use context::Context;
 
 use std::env;
 

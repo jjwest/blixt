@@ -1,10 +1,11 @@
 use ast::{
     ArgList, Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, ExprKind, For,
-    FunctionCall, FunctionDecl, If, Input, Param, ParamList, Print, Range, Stmt, UnaryOp,
+    FunctionCall, FunctionDecl, If, Input, Param, ParamList, Print, Range, Return, Stmt, UnaryOp,
     UnaryOpKind, VarDecl,
 };
-use common::{Context, Location};
+use context::Context;
 use lexer::{Token, TokenKind};
+use location::Location;
 use primitives::ValueKind;
 
 use failure;
@@ -402,17 +403,20 @@ impl<'a> Parser<'a> {
         trace!("Entered keyword");
 
         if let Some(token) = self.peek_token(0) {
+            let location = token.location;
             match &token.kind {
                 TokenKind::Bool(n) => {
                     let kind = ExprKind::Bool(*n);
-                    let location = token.location;
                     self.next_token();
                     return Ok(Some(Stmt::Expr(Expr { location, kind })));
                 }
                 TokenKind::Return => {
                     self.next_token();
                     let expr = self.expression()?;
-                    return Ok(Some(Stmt::Return(expr)));
+                    return Ok(Some(Stmt::Return(Return {
+                        value: expr,
+                        location,
+                    })));
                 }
                 _ => {}
             }

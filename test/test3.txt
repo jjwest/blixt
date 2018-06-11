@@ -4,7 +4,7 @@ age := 20
 age = -age
 
 fn double_age(curr_age: int) -> int {
-   return curr_age * 2
+   return "Hej"
 }
 
 age = double_age(age)

@@ -1,8 +1,9 @@
 use ast::{
-    Assignment, AssignmentKind, Ast, BinaryOp, Decl, Expr, ExprKind, For, FunctionCall, If, Input,
-    Print, Stmt, StmtList, UnaryOp, VarDecl,
+    Assignment, AssignmentKind, Ast, BinaryOp, Decl, Expr, ExprKind, For, FunctionCall,
+    FunctionDecl, If, Input, Print, Return, Stmt, StmtList, UnaryOp, VarDecl,
 };
-use common::{Context, Location};
+use context::Context;
+use location::Location;
 use primitives::{Value, ValueKind};
 use scope::Scope;
 use traits::{Visitable, Visitor};
@@ -31,6 +32,7 @@ pub struct Typechecker<'a, 'ctxt> {
     context: &'ctxt mut Context,
     location: Vec<Location>,
     deferred_funcalls: Vec<&'a FunctionCall>,
+    current_function: Option<&'a FunctionDecl>,
 }
 
 impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
@@ -42,6 +44,7 @@ impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
             location: Vec::new(),
             context,
             deferred_funcalls: Vec::new(),
+            current_function: None,
         }
     }
 
@@ -49,11 +52,10 @@ impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
         node.accept(self);
         self.types
             .pop()
-            .expect("Tried calling type_of, but no types ready")
+            .expect("Tried calling type_of, but no type found")
     }
 
     fn report_error(&mut self, message: &str) {
-        self.types.push(ValueKind::Nil);
         let location = self.location[self.location.len() - 1];
         self.context.error(message, location);
     }
@@ -124,6 +126,7 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
                 }
             }
             Decl::Function(decl) => {
+                self.current_function = Some(decl);
                 self.scope.add_function(&decl);
                 self.scope.new_scope();
 
@@ -133,6 +136,7 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
 
                 self.visit_stmt_list(&decl.body);
                 self.scope.pop_scope();
+                self.current_function = None;
             }
         }
     }
@@ -220,8 +224,34 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
         }
     }
 
-    fn visit_return_stmt(&mut self, _node: Option<&'a Expr>) {
+    fn visit_return(&mut self, node: &'a Return) {
         trace!("Visiting return stmt");
+
+        self.location.push(node.location);
+
+        if let Some(func) = self.current_function {
+            let return_type = node.value.as_ref().map(|expr| self.type_of(&*expr));
+            match (func.return_type, return_type) {
+                (None, Some(a)) => {
+                    self.report_error(&format!("No return value expected, found {:?}", a));
+                    self.check_passed = false;
+                }
+                (Some(a), None) => {
+                    self.report_error(&format!("Expected return value of type {:?}", a));
+                    self.check_passed = false;
+                }
+                (Some(a), Some(b)) if a != b => {
+                    self.report_error(&format!("Expected return value {:?}, found {:?}", a, b));
+                    self.check_passed = false;
+                }
+                _ => {}
+            }
+        } else {
+            self.report_error("Cannot use keyword return outside of a function");
+            self.check_passed = false;
+        }
+
+        self.location.pop();
     }
 
     fn visit_block(&mut self, _node: &'a StmtList) {

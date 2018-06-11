@@ -1,5 +1,6 @@
 use ast::{
-    Assignment, BinaryOp, Decl, Expr, For, FunctionCall, If, Input, Print, Stmt, StmtList, UnaryOp,
+    Assignment, BinaryOp, Decl, Expr, For, FunctionCall, If, Input, Print, Return, Stmt, StmtList,
+    UnaryOp,
 };
 
 pub trait Visitor<'ast> {
@@ -12,7 +13,7 @@ pub trait Visitor<'ast> {
     fn visit_funcall(&mut self, node: &'ast FunctionCall);
     fn visit_if_stmt(&mut self, node: &'ast If);
     fn visit_ident(&mut self, node: &'ast String);
-    fn visit_return_stmt(&mut self, node: Option<&'ast Expr>);
+    fn visit_return(&mut self, node: &'ast Return);
     fn visit_block(&mut self, node: &'ast StmtList);
     fn visit_assignment(&mut self, node: &'ast Assignment);
     fn visit_print(&mut self, node: &'ast Print);

@@ -1,4 +1,4 @@
-use common::Location;
+use location::Location;
 use primitives::ValueKind;
 use traits::{Visitable, Visitor};
 
@@ -22,7 +22,13 @@ pub enum Stmt {
     For(For),
     Print(Print),
     If(If),
-    Return(Option<Expr>),
+    Return(Return),
+}
+
+#[derive(Debug, Clone)]
+pub struct Return {
+    pub value: Option<Expr>,
+    pub location: Location,
 }
 
 #[derive(Debug, Clone)]
@@ -111,7 +117,6 @@ pub struct VarDecl {
     pub name: String,
     pub value: Expr,
     pub kind: ValueKind,
-    // pub location: Location,
 }
 
 #[derive(Debug, Clone)]
@@ -186,7 +191,7 @@ impl<'a> Visitable<'a> for Stmt {
             Stmt::Expr(a) => visitor.visit_expr(a),
             Stmt::For(a) => visitor.visit_for(a),
             Stmt::If(a) => visitor.visit_if_stmt(a),
-            Stmt::Return(a) => visitor.visit_return_stmt(a.as_ref()),
+            Stmt::Return(a) => visitor.visit_return(a),
         }
     }
 }
