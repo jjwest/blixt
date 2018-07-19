@@ -50,7 +50,8 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
 
         for stmt in node {
             stmt.accept(self);
-            if let Some(Value::Return(_)) = self.values.get(0) {
+
+            if let Stmt::Return(_) = stmt {
                 break;
             }
         }
@@ -172,7 +173,6 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
                 Value::Bool(_) => self.report_error("Cannot have negative booleans"),
                 Value::String(_) => self.report_error("Cannot have negative strings"),
                 Value::Nil => self.report_error("Cannot have negative nil"),
-                _ => println!("Tried to negate return value"),
             },
         }
     }
@@ -196,7 +196,7 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
 
         let arg_values: Vec<Value> = node.args.iter().map(|arg| self.value_of(arg)).collect();
 
-        self.scope.new_scope();
+        self.scope.push_scope();
         for (param, value) in func.params.iter().zip(arg_values) {
             let kind = match value {
                 Value::Bool(_) => ValueKind::Bool,
@@ -238,7 +238,7 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
         trace!("Visit return");
 
         if let Some(ref expr) = node.value {
-            let value = Value::Return(Box::new(self.value_of(expr)));
+            let value = self.value_of(expr);
             self.values.push(value);
         }
     }
@@ -261,12 +261,12 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
             .expect(&format!("Unknown ident {}", node.ident));
 
         match node.op {
-            AssignmentKind::Assign => *var = value,
-            AssignmentKind::Add => *var += value,
-            AssignmentKind::Sub => *var -= value,
-            AssignmentKind::Mul => *var *= value,
-            AssignmentKind::Div => *var /= value,
-            AssignmentKind::Mod => *var %= value,
+            AssignmentKind::Assign => var.value = value,
+            AssignmentKind::Add => var.value += value,
+            AssignmentKind::Sub => var.value -= value,
+            AssignmentKind::Mul => var.value *= value,
+            AssignmentKind::Div => var.value /= value,
+            AssignmentKind::Mod => var.value %= value,
         }
     }
 
@@ -306,14 +306,6 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
                         Some(Value::Float(n)) => output.push_str(&format!("{}", n)),
                         Some(Value::Bool(n)) => output.push_str(&format!("{}", n)),
                         Some(Value::Nil) => output.push_str("nil"),
-                        Some(Value::Return(val)) => match *val {
-                            Value::Int(n) => output.push_str(&format!("{}", n)),
-                            Value::Float(n) => output.push_str(&format!("{}", n)),
-                            Value::Bool(n) => output.push_str(&format!("{}", n)),
-                            Value::Nil => output.push_str("nil"),
-                            Value::String(n) => output.extend(n.chars()),
-                            _ => unreachable!(),
-                        },
                         None => panic!("Expected format arg {}, but none found", num_fmt_args),
                     }
                     num_fmt_args += 1;
@@ -366,7 +358,7 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
 
         for i in node.range.start..node.range.end {
             let var = self.scope.get_variable_mut(&node.ident).unwrap();
-            *var = Value::Int(i);
+            var.value = Value::Int(i);
             node.block.accept(self);
         }
 

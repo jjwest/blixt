@@ -43,7 +43,7 @@ impl<'ast> Scope<'ast> {
         }
     }
 
-    pub fn new_scope(&mut self) {
+    pub fn push_scope(&mut self) {
         self.scopes.push(InnerScope::new(Some(self.curr_scope)));
         self.curr_scope += 1;
     }
@@ -76,7 +76,7 @@ impl<'ast> Scope<'ast> {
         })
     }
 
-    pub fn get_variable(&mut self, name: &'ast str) -> Option<&Variable> {
+    pub fn get_variable(&mut self, name: &'ast str) -> Option<&'ast Variable> {
         let mut scope = &self.scopes[self.curr_scope];
 
         loop {
@@ -96,20 +96,12 @@ impl<'ast> Scope<'ast> {
         None
     }
 
-    pub fn get_variable_mut(&mut self, name: &str) -> Option<&mut Value> {
-        let mut scope = &mut self.scopes[self.curr_scope];
-
-        loop {
+    pub fn get_variable_mut(&mut self, name: &str) -> Option<&'ast mut Variable> {
+        for scope in &mut self.scopes {
             for var in scope.variables.iter_mut().rev() {
                 if var.name == name {
-                    return Some(&mut var.value);
+                    return Some(var);
                 }
-            }
-
-            if let Some(parent) = scope.parent {
-                scope = &mut self.scopes[parent];
-            } else {
-                break;
             }
         }
 

@@ -1,6 +1,6 @@
 [package]
 authors = ["Jonas Westlund <jonaswestlund101@gmail.com>"]
-name = "photon"
+name = "blixt"
 version = "0.1.0"
 [dependencies]
 failure = "0.1.0"

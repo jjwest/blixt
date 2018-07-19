@@ -3,7 +3,7 @@ use termcolor::{BufferWriter, Color, ColorChoice, ColorSpec, WriteColor};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use location::Location;
 
@@ -52,7 +52,7 @@ impl Context {
 
         write!(&mut buf, "|").unwrap();
 
-        for _ in 0..prelude.len() + location.span.start {
+        for _ in 0..(prelude.len() as u32 + location.span.start) {
             write!(&mut buf, " ").unwrap();
         }
 

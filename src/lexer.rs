@@ -91,8 +91,8 @@ pub enum TokenKind {
 struct Error;
 
 struct Lexer {
-    line: usize,
-    column: usize,
+    line: u32,
+    column: u32,
     file: InternedString,
     source: Peekable<IntoIter<char>>,
 }
@@ -147,7 +147,7 @@ impl Iterator for Lexer {
                     .take_while_ref(|c| c.is_alphanumeric() || *c == '_')
                     .collect();
 
-                self.column += word.len();
+                self.column += word.len() as u32;
 
                 let kind = match word.as_str() {
                     "if" => TokenKind::If,
@@ -217,7 +217,7 @@ impl Iterator for Lexer {
                     }
                 }
 
-                self.column += number.len();
+                self.column += number.len() as u32;
 
                 let kind = if is_float {
                     TokenKind::Float(number.parse().unwrap())
@@ -239,7 +239,7 @@ impl Iterator for Lexer {
             }
             c if is_operator(*c) => {
                 let operator: String = self.source.take_while_ref(|ch| is_operator(*ch)).collect();
-                self.column += operator.len();
+                self.column += operator.len() as u32;
 
                 if operator == "//" {
                     let _: Vec<_> = self.source.take_while_ref(|c| *c != '\n').collect();
@@ -340,7 +340,7 @@ impl Iterator for Lexer {
                 }
 
                 self.source.next();
-                self.column += string_literal.len() + 2;
+                self.column += string_literal.len() as u32 + 2;
 
                 Some(Ok(Token {
                     kind: TokenKind::String(string_literal),

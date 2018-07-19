@@ -17,7 +17,6 @@ pub enum Value {
     Int(i32),
     Float(f32),
     String(Rc<String>),
-    Return(Box<Value>),
     Nil,
 }
 
@@ -29,7 +28,6 @@ impl fmt::Display for Value {
             Value::Int(val) => write!(f, "{}", val)?,
             Value::Float(val) => write!(f, "{}", val)?,
             Value::String(ref val) => write!(f, "{}", val)?,
-            _ => {}
         }
 
         Ok(())

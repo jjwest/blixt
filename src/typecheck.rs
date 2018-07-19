@@ -1,6 +1,6 @@
 use ast::{
     Assignment, AssignmentKind, Ast, BinaryOp, Decl, Expr, ExprKind, For, FunctionCall,
-    FunctionDecl, If, Input, Print, Return, Stmt, StmtList, UnaryOp, VarDecl,
+    FunctionDecl, If, Input, Print, Return, Stmt, StmtList, UnaryOp,
 };
 use context::Context;
 use location::Location;
@@ -58,12 +58,14 @@ impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
     fn report_error(&mut self, message: &str) {
         let location = self.location[self.location.len() - 1];
         self.context.error(message, location);
+        self.check_passed = false;
     }
 
     fn check_deferred_funcalls(&mut self) {
-        let checks = self.deferred_funcalls.clone();
-        for node in checks {
-            self.scope.new_scope();
+        let funcalls = self.deferred_funcalls.clone();
+
+        for node in funcalls {
+            self.scope.push_scope();
             match self.scope.get_function(&node.name) {
                 Some(func) => {
                     for param in &func.params {
@@ -72,8 +74,7 @@ impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
                     self.visit_funcall(node);
                 }
                 None => {
-                    self.report_error(&format!("Undefined function '{}", node.name));
-                    self.check_passed = false;
+                    self.report_error(&format!("Undefined function '{}'", node.name));
                 }
             }
             self.scope.pop_scope();
@@ -119,16 +120,16 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
         trace!("Visiting decl");
 
         match node {
-            Decl::Variable(VarDecl { name, value, kind }) => {
-                if *kind == ValueKind::Nil {
-                    let kind = self.type_of(value);
-                    self.scope.add_variable(name, Value::Nil, kind);
+            Decl::Variable(decl) => {
+                if decl.kind == ValueKind::Nil {
+                    let kind = self.type_of(&decl.value);
+                    self.scope.add_variable(&decl.name, Value::Nil, kind);
                 }
             }
             Decl::Function(decl) => {
                 self.current_function = Some(decl);
                 self.scope.add_function(&decl);
-                self.scope.new_scope();
+                self.scope.push_scope();
 
                 for param in &decl.params {
                     self.scope.add_variable(&param.name, Value::Nil, param.kind);
@@ -160,7 +161,6 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
                     "Invalid types {:?}, {:?} for operator {:?}",
                     a, b, node.op
                 ));
-                self.check_passed = false;
             }
         }
     }
@@ -189,7 +189,6 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
                 node.args.len(),
                 function.params.len()
             ));
-            self.check_passed = false;
         }
 
         for (arg, param) in node.args.iter().zip(function.params.iter()) {
@@ -200,7 +199,6 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
             if arg_type != ValueKind::Nil && arg_type != param.kind {
                 self.location.push(arg.location);
                 self.report_error(&format!("Expected {:?}, found {:?}", param.kind, arg_type));
-                self.check_passed = false;
                 self.location.pop();
             }
         }
@@ -219,7 +217,6 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
             Some(var) => self.types.push(var.kind),
             None => {
                 self.report_error(&format!("Undeclared variable '{}'", node));
-                self.check_passed = false;
             }
         }
     }
@@ -234,21 +231,17 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
             match (func.return_type, return_type) {
                 (None, Some(a)) => {
                     self.report_error(&format!("No return value expected, found {:?}", a));
-                    self.check_passed = false;
                 }
                 (Some(a), None) => {
                     self.report_error(&format!("Expected return value of type {:?}", a));
-                    self.check_passed = false;
                 }
                 (Some(a), Some(b)) if a != b => {
                     self.report_error(&format!("Expected return value {:?}, found {:?}", a, b));
-                    self.check_passed = false;
                 }
                 _ => {}
             }
         } else {
             self.report_error("Cannot use keyword return outside of a function");
-            self.check_passed = false;
         }
 
         self.location.pop();
@@ -282,7 +275,6 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
                         "Invalid types {:?}, {:?} for operator {:?}",
                         lhs, rhs, node.op
                     ));
-                    self.check_passed = false;
                 }
             }
             (a, b) => {
@@ -290,7 +282,6 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
                     "Invalid types {:?}, {:?} for operator {:?}",
                     a, b, node.op
                 ));
-                self.check_passed = false;
             }
         }
 
