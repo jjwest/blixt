@@ -251,11 +251,10 @@ impl<'a> Parser<'a> {
             }
         };
 
-        match (var_type, &value.kind) {
-            (ValueKind::Float, ExprKind::Integer(n)) => {
+        if let ValueKind::Float = var_type {
+            if let ExprKind::Integer(n) = &value.kind {
                 value.kind = ExprKind::Float(*n as f32);
             }
-            _ => {}
         }
 
         Ok(Some(Stmt::Decl(Decl::Variable(VarDecl {
@@ -614,6 +613,7 @@ impl<'a> Parser<'a> {
                     TokenKind::Greater => BinaryOpKind::Greater,
                     TokenKind::GreaterEqual => BinaryOpKind::GreaterEqual,
                     TokenKind::Lesser => BinaryOpKind::Lesser,
+                    TokenKind::LesserEqual => BinaryOpKind::LesserEqual,
                     TokenKind::NotEqual => BinaryOpKind::NotEqual,
                     _ => return Ok(Some(lhs)),
                 };
@@ -851,7 +851,7 @@ impl<'a> Parser<'a> {
         Ok(Some(Expr {
             location,
             kind: ExprKind::Input(Input {
-                message: message.map(|m| Box::new(m)),
+                message: message.map(Box::new),
             }),
         }))
     }

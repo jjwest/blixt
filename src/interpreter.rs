@@ -183,7 +183,7 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
         let func = self
             .scope
             .get_function(&node.name)
-            .expect(&format!("Unknown function {}", node.name));
+            .unwrap_or_else(|| panic!("Unknown function {}", node.name));
 
         assert!(
             func.params.len() == node.args.len(),
@@ -208,9 +208,8 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
             self.scope.add_variable(&param.name, value, kind);
         }
 
-        let result = func.body.accept(self);
+        func.body.accept(self);
         self.scope.pop_scope();
-        result
     }
 
     fn visit_if_stmt(&mut self, node: &'a If) {
@@ -224,13 +223,13 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
         }
     }
 
-    fn visit_ident(&mut self, node: &'a String) {
+    fn visit_ident(&mut self, node: &'a str) {
         trace!("Visit ident");
 
         let var = self
             .scope
             .get_variable(&node)
-            .expect(&format!("Unknown ident {}", node));
+            .unwrap_or_else(|| panic!("Unknown ident {}", node));
         self.values.push(var.value.clone());
     }
 
@@ -246,9 +245,8 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
     fn visit_block(&mut self, node: &'a StmtList) {
         trace!("Visit block");
         self.scope.new_scope_level();
-        let result = self.visit_stmt_list(node);
+        self.visit_stmt_list(node);
         self.scope.pop_scope_level();
-        result
     }
 
     fn visit_assignment(&mut self, node: &'a Assignment) {
@@ -258,7 +256,7 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
         let var = self
             .scope
             .get_variable_mut(&node.ident)
-            .expect(&format!("Unknown ident {}", node.ident));
+            .unwrap_or_else(|| panic!("Unknown ident {}", node.ident));
 
         match node.op {
             AssignmentKind::Assign => var.value = value,

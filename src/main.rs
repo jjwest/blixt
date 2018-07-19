@@ -35,7 +35,7 @@ fn main() {
 fn run() -> Result<(), failure::Error> {
     let source_file = env::args()
         .nth(1)
-        .ok_or(failure::err_msg("Missing argument FILE"))?;
+        .ok_or_else(|| failure::err_msg("Missing argument FILE"))?;
 
     let mut context = Context::new();
 

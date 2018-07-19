@@ -14,7 +14,7 @@ pub fn typecheck(ast: &Ast, context: &mut Context) -> Result<(), failure::Error>
     let mut checker = Typechecker::new(context);
     ast.accept(&mut checker);
 
-    if checker.deferred_funcalls.len() > 0 {
+    if !checker.deferred_funcalls.is_empty() {
         checker.check_deferred_funcalls();
     }
 
@@ -211,9 +211,9 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
         trace!("Visiting if_stmt");
     }
 
-    fn visit_ident(&mut self, node: &'a String) {
+    fn visit_ident(&mut self, node: &'a str) {
         trace!("Visiting ident");
-        match self.scope.get_variable(node.as_str()) {
+        match self.scope.get_variable(node) {
             Some(var) => self.types.push(var.kind),
             None => {
                 self.report_error(&format!("Undeclared variable '{}'", node));

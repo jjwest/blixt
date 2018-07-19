@@ -38,7 +38,6 @@ pub enum TokenKind {
     MulAssign,
     SubAssign,
     ModAssign,
-    Member,
 
     // Declarations
     VarDecl,
@@ -331,7 +330,7 @@ impl Iterator for Lexer {
                 let mut string_literal = String::new();
                 loop {
                     string_literal.extend(self.source.take_while_ref(|c| *c != '"'));
-                    if string_literal.ends_with(r"\") {
+                    if string_literal.ends_with('\\') {
                         string_literal.push('"');
                         self.source.next();
                     } else {
