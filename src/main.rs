@@ -39,7 +39,7 @@ fn run() -> Result<(), failure::Error> {
 
     let mut context = Context::new();
 
-    if let Ok(var) = env::var("PHOTON_DEBUG") {
+    if let Ok(var) = env::var("BLIXT_DEBUG") {
         if var == "1" {
             env::set_var("RUST_BACKTRACE", "1");
             context.debug_mode = true;

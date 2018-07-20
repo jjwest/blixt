@@ -1,3 +1,4 @@
+test: int = "Jonas"
 name := "Jonas" + 3
 
 name := "Jonas"

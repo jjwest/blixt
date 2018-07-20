@@ -13,10 +13,7 @@ use failure;
 pub fn typecheck(ast: &Ast, context: &mut Context) -> Result<(), failure::Error> {
     let mut checker = Typechecker::new(context);
     ast.accept(&mut checker);
-
-    if !checker.deferred_funcalls.is_empty() {
-        checker.check_deferred_funcalls();
-    }
+    checker.check_deferred_funcalls();
 
     if checker.check_passed {
         Ok(())
@@ -25,7 +22,7 @@ pub fn typecheck(ast: &Ast, context: &mut Context) -> Result<(), failure::Error>
     }
 }
 
-pub struct Typechecker<'a, 'ctxt> {
+struct Typechecker<'a, 'ctxt> {
     types: Vec<ValueKind>,
     check_passed: bool,
     scope: Scope<'a>,
