@@ -28,8 +28,8 @@ impl<'a, 'ctxt> Interpreter<'a, 'ctxt> {
         Self {
             scope: Scope::new(),
             values: Vec::new(),
-            context,
             location: Vec::new(),
+            context,
         }
     }
 
@@ -74,7 +74,7 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
             ExprKind::Ident(v) => self.visit_ident(v),
             ExprKind::UnaryOp(v) => self.visit_unary_op(v),
             ExprKind::BinaryOp(v) => self.visit_binary_op(v),
-            ExprKind::FunctionCall(v) => self.visit_funcall(v),
+            ExprKind::FunctionCall(v) => self.visit_function_call(v),
             ExprKind::Input(v) => self.visit_input(v),
             ExprKind::Range(_v) => unimplemented!(),
         }
@@ -87,10 +87,11 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
 
         match node {
             Decl::Function(func) => self.scope.add_function(func),
-            Decl::Variable(ref var) => {
+            Decl::Variable(var) => {
                 let value = self.value_of(&var.value);
-                self.scope.add_variable(&var.name, value, var.kind);
+                self.scope.add_variable(&var.name, value, var.kind.clone());
             }
+            Decl::Struct(decl) => self.scope.add_struct(decl),
         }
     }
 
@@ -142,6 +143,7 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
                 let value = Value::Bool(self.value_of(&*node.lhs) >= self.value_of(&*node.rhs));
                 self.values.push(value);
             }
+            BinaryOpKind::Field => unimplemented!(),
             BinaryOpKind::And => match (self.value_of(&*node.lhs), self.value_of(&*node.rhs)) {
                 (Value::Bool(a), Value::Bool(b)) => self.values.push(Value::Bool(a && b)),
                 (a, b) => self.report_error(&format!(
@@ -173,11 +175,12 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
                 Value::Bool(_) => self.report_error("Cannot have negative booleans"),
                 Value::String(_) => self.report_error("Cannot have negative strings"),
                 Value::Nil => self.report_error("Cannot have negative nil"),
+                Value::Struct(_) => self.report_error("Cannot have negative struct"),
             },
         }
     }
 
-    fn visit_funcall(&mut self, node: &'a FunctionCall) {
+    fn visit_function_call(&mut self, node: &'a FunctionCall) {
         trace!("Visit funcall");
 
         let func = self
@@ -215,8 +218,8 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
     fn visit_if_stmt(&mut self, node: &'a If) {
         trace!("Visit if stmt");
 
-        let cond = self.value_of(&node.cond);
-        if cond == Value::Bool(true) {
+        let condition = self.value_of(&node.cond);
+        if condition == Value::Bool(true) {
             node.body.accept(self);
         } else if let Some(ref else_body) = node.else_body {
             else_body.accept(self);
@@ -304,6 +307,7 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
                         Some(Value::Float(n)) => output.push_str(&format!("{}", n)),
                         Some(Value::Bool(n)) => output.push_str(&format!("{}", n)),
                         Some(Value::Nil) => output.push_str("nil"),
+                        Some(Value::Struct(_)) => unimplemented!(),
                         None => panic!("Expected format arg {}, but none found", num_fmt_args),
                     }
                     num_fmt_args += 1;

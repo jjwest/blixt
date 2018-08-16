@@ -1,7 +1,7 @@
 use ast::{
     ArgList, Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, ExprKind, For,
-    FunctionCall, FunctionDecl, If, Input, Param, ParamList, Print, Range, Return, Stmt, UnaryOp,
-    UnaryOpKind, VarDecl,
+    FunctionCall, FunctionDecl, If, Input, Param, ParamList, Print, Range, Return, Stmt,
+    StructDecl, UnaryOp, UnaryOpKind, VarDecl,
 };
 use context::Context;
 use lexer::{Token, TokenKind};
@@ -117,7 +117,7 @@ impl<'a> Parser<'a> {
 
         if let Some(print) = self.print()? {
             Ok(Some(print))
-        } else if let Some(decl) = self.declaration()? {
+        } else if let Some(decl) = self.struct_decl()? {
             Ok(Some(decl))
         } else if let Some(if_stmt) = self.if_statement()? {
             Ok(Some(if_stmt))
@@ -130,6 +130,8 @@ impl<'a> Parser<'a> {
         } else if let Some(assignment) = self.assignment()? {
             Ok(Some(assignment))
         } else if let Some(decl) = self.function_decl()? {
+            Ok(Some(decl))
+        } else if let Some(decl) = self.declaration()? {
             Ok(Some(decl))
         } else if let Some(expr) = self.expression()? {
             Ok(Some(Stmt::Expr(expr)))
@@ -275,7 +277,9 @@ impl<'a> Parser<'a> {
         self.next_token();
         let name = self.ident()?;
 
+        self.expect_next(TokenKind::OpenParen)?;
         let param_list = self.parameter_list()?;
+        self.expect_next(TokenKind::CloseParen)?;
 
         let return_type = if let Some(TokenKind::ReturnDecl) = self.peek_token_kind(0) {
             self.next_token();
@@ -302,27 +306,28 @@ impl<'a> Parser<'a> {
         }))))
     }
 
+    fn struct_decl(&mut self) -> Result<Option<Stmt>, ()> {
+        trace!("Entered struct_decl");
+
+        if let Some(TokenKind::StructDecl) = self.peek_token_kind(0) {
+            self.next_token();
+            let name = self.ident()?;
+            self.expect_next(TokenKind::OpenBrace)?;
+            let fields = self.parameter_list()?;
+            self.expect_next(TokenKind::CloseBrace)?;
+
+            Ok(Some(Stmt::Decl(Decl::Struct(StructDecl { name, fields }))))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn parameter_list(&mut self) -> Result<ParamList, ()> {
-        self.expect_next(TokenKind::OpenParen)?;
+        trace!("Entered parameter_list");
 
         let mut params = ParamList::new();
 
-        loop {
-            match self.peek_token_kind(0) {
-                Some(TokenKind::Ident(_)) => {}
-                Some(TokenKind::CloseParen) => {
-                    self.next_token();
-                    break;
-                }
-                other => {
-                    self.report_error(&format!(
-                        "Expected identifier or closing parenthesis, found {:?}",
-                        other
-                    ));
-                    return Err(());
-                }
-            }
-
+        while let Some(TokenKind::Ident(_)) = self.peek_token_kind(0) {
             let name = self.ident().expect("Expected ident");
             self.expect_next(TokenKind::Colon)?;
 
@@ -332,22 +337,19 @@ impl<'a> Parser<'a> {
                     TokenKind::IntType => ValueKind::Integer,
                     TokenKind::FloatType => ValueKind::Float,
                     TokenKind::StringType => ValueKind::String,
-                    _ => panic!("Expected type"),
+                    TokenKind::Ident(name) => ValueKind::Struct(Rc::new(name)),
+                    _ => {
+                        self.report_error("Expected type");
+                        return Err(());
+                    }
                 },
                 None => panic!("Sadasdas"),
             };
 
             params.push(Param { name, kind });
 
-            if let Some(token) = self.next_token() {
-                if token.kind == TokenKind::CloseParen {
-                    break;
-                } else if token.kind != TokenKind::Comma {
-                    self.report_error(&format!(
-                        "Expected comma or closing parenthesis, found {:?}",
-                        token.kind
-                    ));
-                }
+            if let Some(TokenKind::Comma) = self.peek_token_kind(0) {
+                self.next_token();
             }
         }
 
@@ -606,7 +608,7 @@ impl<'a> Parser<'a> {
     fn logical_expr_b(&mut self) -> Result<Option<Expr>, ()> {
         trace!("Entered expression");
 
-        if let Some(lhs) = self.factor()? {
+        if let Some(lhs) = self.logical_expr_c()? {
             if let Some(op) = self.peek_token(0) {
                 let op = match op.kind {
                     TokenKind::Equal => BinaryOpKind::Equal,
@@ -615,6 +617,38 @@ impl<'a> Parser<'a> {
                     TokenKind::Lesser => BinaryOpKind::Lesser,
                     TokenKind::LesserEqual => BinaryOpKind::LesserEqual,
                     TokenKind::NotEqual => BinaryOpKind::NotEqual,
+                    _ => return Ok(Some(lhs)),
+                };
+
+                self.next_token();
+                let rhs = self.logical_expr_b()?.expect("No rhs in expression");
+                let location = join_locations(lhs.location, rhs.location);
+
+                let expr = Expr {
+                    location,
+                    kind: ExprKind::BinaryOp(BinaryOp {
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                        op,
+                    }),
+                };
+
+                Ok(Some(expr))
+            } else {
+                Ok(Some(lhs))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn logical_expr_c(&mut self) -> Result<Option<Expr>, ()> {
+        trace!("Entered expression");
+
+        if let Some(lhs) = self.factor()? {
+            if let Some(op) = self.peek_token(0) {
+                let op = match op.kind {
+                    TokenKind::Field => BinaryOpKind::Field,
                     _ => return Ok(Some(lhs)),
                 };
 

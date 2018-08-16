@@ -99,6 +99,8 @@ pub enum BinaryOpKind {
     LesserEqual,
     NotEqual,
 
+    Field,
+
     Add,
     Sub,
     Mul,
@@ -110,6 +112,7 @@ pub enum BinaryOpKind {
 pub enum Decl {
     Variable(VarDecl),
     Function(FunctionDecl),
+    Struct(StructDecl),
 }
 
 #[derive(Debug, Clone)]
@@ -117,6 +120,12 @@ pub struct VarDecl {
     pub name: String,
     pub value: Expr,
     pub kind: ValueKind,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructDecl {
+    pub name: String,
+    pub fields: Vec<Param>,
 }
 
 #[derive(Debug, Clone)]

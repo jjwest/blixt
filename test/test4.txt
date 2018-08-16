@@ -2,30 +2,27 @@ if 5 > 4 && true || false {
    name := 20
 }
 
-fn test_things_works() -> int {
-   num := 5
+fn test_things_works(n: int) -> int {
    {
-        num += 5
+        n += 5
         age := 2
         {
             age *= 2
         }
    }
 
-   return num
+   return n
 }
 
 
-test_things_works()
+fn test_things_dont_work() -> int {
+   num := 5
+   {
+        age = 5
+   }
 
-// fn test_things_dont_work() -> int {
-//    num := 5
-//    {
-//         age = 5
-//    }
-
-//    return num
-// }
+   return num
+}
 
 number := 5
 number += 4

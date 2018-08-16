@@ -1,4 +1,4 @@
-#![feature(nll)]
+#![feature(rust_2018_preview)]
 
 extern crate failure;
 #[macro_use]

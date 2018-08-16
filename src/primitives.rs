@@ -2,12 +2,13 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Rem, RemAssign, Sub, SubAssign};
 use std::rc::Rc;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ValueKind {
     Bool,
     String,
     Integer,
     Float,
+    Struct(Rc<String>),
     Nil,
 }
 
@@ -17,17 +18,19 @@ pub enum Value {
     Int(i32),
     Float(f32),
     String(Rc<String>),
+    Struct(Rc<String>),
     Nil,
 }
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        match self {
             Value::Nil => write!(f, "nil")?,
             Value::Bool(val) => write!(f, "{}", val)?,
             Value::Int(val) => write!(f, "{}", val)?,
             Value::Float(val) => write!(f, "{}", val)?,
-            Value::String(ref val) => write!(f, "{}", val)?,
+            Value::String(val) => write!(f, "{}", val)?,
+            Value::Struct(val) => write!(f, "{}", val)?,
         }
 
         Ok(())

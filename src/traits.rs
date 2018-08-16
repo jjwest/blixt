@@ -10,7 +10,7 @@ pub trait Visitor<'ast> {
     fn visit_decl(&mut self, node: &'ast Decl);
     fn visit_binary_op(&mut self, node: &'ast BinaryOp);
     fn visit_unary_op(&mut self, node: &'ast UnaryOp);
-    fn visit_funcall(&mut self, node: &'ast FunctionCall);
+    fn visit_function_call(&mut self, node: &'ast FunctionCall);
     fn visit_if_stmt(&mut self, node: &'ast If);
     fn visit_ident(&mut self, node: &'ast str);
     fn visit_return(&mut self, node: &'ast Return);

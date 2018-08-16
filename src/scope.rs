@@ -1,9 +1,10 @@
-use ast::FunctionDecl;
+use ast::{FunctionDecl, StructDecl};
 use primitives::{Value, ValueKind};
 
 use std::collections::HashMap;
 
 pub type FuncName<'ast> = &'ast str;
+pub type StructName<'ast> = &'ast str;
 
 pub struct Scope<'ast> {
     scopes: Vec<InnerScope<'ast>>,
@@ -12,6 +13,7 @@ pub struct Scope<'ast> {
 
 struct InnerScope<'ast> {
     functions: HashMap<FuncName<'ast>, &'ast FunctionDecl>,
+    user_defined_types: HashMap<StructName<'ast>, &'ast StructDecl>,
     variables: Vec<Variable<'ast>>,
     level: usize,
     parent: Option<usize>,
@@ -21,6 +23,7 @@ impl<'ast> InnerScope<'ast> {
     pub fn new(parent: Option<usize>) -> InnerScope<'ast> {
         InnerScope {
             functions: HashMap::new(),
+            user_defined_types: HashMap::new(),
             variables: Vec::new(),
             level: 0,
             parent,
@@ -119,6 +122,29 @@ impl<'ast> Scope<'ast> {
         loop {
             if let Some(func) = scope.functions.get(name) {
                 return Some(func);
+            }
+
+            if let Some(parent) = scope.parent {
+                scope = &mut self.scopes[parent];
+            } else {
+                return None;
+            }
+        }
+    }
+
+    pub fn add_struct(&mut self, structure: &'ast StructDecl) {
+        let scope = &mut self.scopes[self.curr_scope];
+        scope
+            .user_defined_types
+            .insert(structure.name.as_str(), structure);
+    }
+
+    pub fn get_struct(&mut self, name: &str) -> Option<&'ast StructDecl> {
+        let mut scope = &mut self.scopes[self.curr_scope];
+
+        loop {
+            if let Some(structure) = scope.user_defined_types.get(name) {
+                return Some(structure);
             }
 
             if let Some(parent) = scope.parent {

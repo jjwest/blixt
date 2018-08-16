@@ -39,15 +39,19 @@ pub enum TokenKind {
     SubAssign,
     ModAssign,
 
-    // Declarations
-    VarDecl,
-
     // Arithmetic operators
     Add,
     Sub,
     Mul,
     Div,
     Mod,
+
+    Field,
+
+    // Declarations
+    FunctionDecl,
+    VarDecl,
+    StructDecl,
 
     // Delimiters
     CloseBrace,
@@ -68,7 +72,6 @@ pub enum TokenKind {
     For,
     Return,
     While,
-    FunctionDecl,
     Range(i32, i32),
     In,
 
@@ -89,11 +92,12 @@ pub enum TokenKind {
 #[fail(display = "Lexer error")]
 struct Error;
 
-struct Lexer {
+struct Lexer<'a> {
     line: u32,
     column: u32,
     file: InternedString,
     source: Peekable<IntoIter<char>>,
+    context: &'a mut Context,
 }
 
 pub fn generate_tokens(
@@ -108,6 +112,7 @@ pub fn generate_tokens(
         file: interned_file,
         column: 1,
         source: source.into_iter().peekable(),
+        context,
     };
 
     let tokens: Result<VecDeque<Token>, Error> = lexer.collect();
@@ -122,7 +127,7 @@ pub fn generate_tokens(
     Ok(tokens)
 }
 
-impl Iterator for Lexer {
+impl<'a> Iterator for Lexer<'a> {
     type Item = Result<Token, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -162,6 +167,7 @@ impl Iterator for Lexer {
                     "bool" => TokenKind::BoolType,
                     "true" => TokenKind::Bool(true),
                     "false" => TokenKind::Bool(false),
+                    "struct" => TokenKind::StructDecl,
                     _ => TokenKind::Ident(word),
                 };
 
@@ -282,7 +288,20 @@ impl Iterator for Lexer {
                     "/" => TokenKind::Div,
                     "%" => TokenKind::Mod,
                     ":" => TokenKind::Colon,
-                    _op => return Some(Err(Error)),
+                    other => {
+                        self.context.error(
+                            &format!("Could not lex unknown operator '{}'", other),
+                            Location {
+                                file: self.file,
+                                line: self.line,
+                                span: Span {
+                                    start: self.column,
+                                    len: other.len() as u32 - self.column,
+                                },
+                            },
+                        );
+                        return Some(Err(Error));
+                    }
                 };
 
                 Some(Ok(Token {
@@ -353,8 +372,37 @@ impl Iterator for Lexer {
                     },
                 }))
             }
+            '.' => {
+                self.source.next();
+
+                Some(Ok(Token {
+                    kind: TokenKind::Field,
+                    location: Location {
+                        file: self.file,
+                        line: self.line,
+                        span: Span {
+                            start: self.column,
+                            len: 1,
+                        },
+                    },
+                }))
+            }
             '\0' => None,
-            _ => Some(Err(Error)),
+            other => {
+                self.context.error(
+                    &format!("Could not lex unknown token '{}'", other),
+                    Location {
+                        file: self.file,
+                        line: self.line,
+                        span: Span {
+                            start: self.column,
+                            len: 1,
+                        },
+                    },
+                );
+
+                Some(Err(Error))
+            }
         }
     }
 }
@@ -389,7 +437,7 @@ mod tests {
     #[test]
     fn lex_keywords() {
         assert_lex(
-            b"if else for return while fn",
+            b"if else for return while fn struct",
             &[
                 TokenKind::If,
                 TokenKind::Else,
@@ -397,6 +445,7 @@ mod tests {
                 TokenKind::Return,
                 TokenKind::While,
                 TokenKind::FunctionDecl,
+                TokenKind::StructDecl,
             ],
         )
     }
