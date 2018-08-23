@@ -1,5 +1,5 @@
-use ast::{FunctionDecl, StructDecl};
-use primitives::{Value, ValueKind};
+use crate::ast::{FunctionDecl, StructDecl};
+use crate::primitives::{Value, ValueKind};
 
 use std::collections::HashMap;
 
@@ -79,7 +79,7 @@ impl<'ast> Scope<'ast> {
         })
     }
 
-    pub fn get_variable(&mut self, name: &'ast str) -> Option<&'ast Variable> {
+    pub fn get_variable(&mut self, name: &'ast str) -> Option<&'ast Variable<'_>> {
         let mut scope = &self.scopes[self.curr_scope];
 
         loop {
@@ -99,7 +99,7 @@ impl<'ast> Scope<'ast> {
         None
     }
 
-    pub fn get_variable_mut(&mut self, name: &str) -> Option<&'ast mut Variable> {
+    pub fn get_variable_mut(&mut self, name: &str) -> Option<&'ast mut Variable<'_>> {
         for scope in &mut self.scopes {
             for var in scope.variables.iter_mut().rev() {
                 if var.name == name {

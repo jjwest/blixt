@@ -1,12 +1,12 @@
-use ast::{
+use crate::ast::{
     ArgList, Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, ExprKind, For,
     FunctionCall, FunctionDecl, If, Input, Param, ParamList, Print, Range, Return, Stmt,
     StructDecl, UnaryOp, UnaryOpKind, VarDecl,
 };
-use context::Context;
-use lexer::{Token, TokenKind};
-use location::Location;
-use primitives::ValueKind;
+use crate::context::Context;
+use crate::lexer::{Token, TokenKind};
+use crate::location::Location;
+use crate::primitives::ValueKind;
 
 use failure;
 
@@ -106,7 +106,7 @@ impl<'a> Parser<'a> {
 
         let mut stmts = Vec::new();
         while let Some(stmt) = self.statement()? {
-            debug!("Parsed STMT {:?}", stmt);
+            debug!("Parsed STMT {:#?}", stmt);
             stmts.push(stmt);
         }
         Ok(stmts)

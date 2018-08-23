@@ -5,7 +5,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-use location::Location;
+use crate::location::Location;
 
 pub struct Context {
     pub source_code: HashMap<PathBuf, String>,

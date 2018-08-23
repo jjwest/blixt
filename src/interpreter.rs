@@ -1,12 +1,12 @@
-use ast::{
+use crate::ast::{
     Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, ExprKind, For,
     FunctionCall, If, Input, Print, Return, Stmt, StmtList, UnaryOp, UnaryOpKind,
 };
-use context::Context;
-use location::Location;
-use primitives::{Value, ValueKind};
-use scope::Scope;
-use traits::{Visitable, Visitor};
+use crate::context::Context;
+use crate::location::Location;
+use crate::primitives::{Value, ValueKind};
+use crate::scope::Scope;
+use crate::traits::{Visitable, Visitor};
 
 use std::io::{self, Write};
 use std::rc::Rc;

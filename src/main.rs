@@ -1,13 +1,9 @@
-#![feature(rust_2018_preview)]
+#![feature(nll)]
 
-extern crate failure;
 #[macro_use]
 extern crate failure_derive;
 #[macro_use]
 extern crate log;
-extern crate itertools;
-extern crate pretty_env_logger;
-extern crate termcolor;
 
 mod ast;
 mod context;
@@ -20,7 +16,7 @@ mod scope;
 mod traits;
 mod typecheck;
 
-use context::Context;
+use crate::context::Context;
 
 use std::env;
 

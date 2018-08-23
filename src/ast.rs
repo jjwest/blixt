@@ -1,6 +1,6 @@
-use location::Location;
-use primitives::ValueKind;
-use traits::{Visitable, Visitor};
+use crate::location::Location;
+use crate::primitives::ValueKind;
+use crate::traits::{Visitable, Visitor};
 
 use std::rc::Rc;
 

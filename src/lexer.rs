@@ -1,9 +1,8 @@
-use failure;
 use itertools::Itertools;
 use log::LogLevel;
 
-use context::Context;
-use location::{InternedString, Location, Span};
+use crate::context::Context;
+use crate::location::{InternedString, Location, Span};
 
 use std::collections::VecDeque;
 use std::fs;
@@ -115,8 +114,7 @@ pub fn generate_tokens(
         context,
     };
 
-    let tokens: Result<VecDeque<Token>, Error> = lexer.collect();
-    let tokens = tokens?;
+    let tokens = lexer.collect::<Result<VecDeque<Token>, Error>>()?;
 
     if log_enabled!(LogLevel::Debug) {
         for token in &tokens {
@@ -421,11 +419,13 @@ mod tests {
 
     fn assert_lex(source: &[u8], tokens: &[TokenKind]) {
         let source: Vec<char> = source.iter().map(|c| *c as char).collect();
+        let mut context = Context::new();
         let lexer = Lexer {
             file: 0,
             line: 1,
             column: 1,
             source: source.into_iter().peekable(),
+            context: &mut context,
         };
 
         for (token, expected) in lexer.zip(tokens) {

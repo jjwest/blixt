@@ -5,7 +5,7 @@ fn present_person(name: string, age: int) {
 
 fn main() {
    name := input("Enter name: ")
-   age := input("Enter age: ")
+   age := 28
 
    present_person(name, age)
 }

@@ -9,8 +9,12 @@ fn double_age(curr_age: int) -> int {
 
 age = double_age(age)
 
+message := ""
+
 if age == 40 {
-   message := "YEAH"
+   message = "YEAH"
 } else {
-  mesage := "NO"
+  message = "NO"
 }
+
+print("%\n", message)

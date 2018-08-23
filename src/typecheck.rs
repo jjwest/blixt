@@ -1,14 +1,12 @@
-use ast::{
-    Assignment, AssignmentKind, Ast, BinaryOp, Decl, Expr, ExprKind, For, FunctionCall,
-    FunctionDecl, If, Input, Print, Return, Stmt, StmtList, UnaryOp,
+use crate::ast::{
+    Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, ExprKind, For,
+    FunctionCall, FunctionDecl, If, Input, Print, Return, Stmt, StmtList, UnaryOp,
 };
-use context::Context;
-use location::Location;
-use primitives::{Value, ValueKind};
-use scope::Scope;
-use traits::{Visitable, Visitor};
-
-use failure;
+use crate::context::Context;
+use crate::location::Location;
+use crate::primitives::{Value, ValueKind};
+use crate::scope::Scope;
+use crate::traits::{Visitable, Visitor};
 
 pub fn typecheck(ast: &Ast, context: &mut Context) -> Result<(), failure::Error> {
     let mut checker = Typechecker::new(context);
@@ -56,6 +54,7 @@ impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
         let location = self.location[self.location.len() - 1];
         self.context.error(message, location);
         self.check_passed = false;
+        self.types.push(ValueKind::Nil);
     }
 
     fn check_deferred_function_calls(&mut self) {
@@ -148,20 +147,37 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
         let left = self.type_of(&*node.lhs);
         let right = self.type_of(&*node.rhs);
 
-        match (left, right) {
-            (ValueKind::Bool, ValueKind::Bool) => self.types.push(ValueKind::Bool),
-            (ValueKind::Integer, ValueKind::Integer) => self.types.push(ValueKind::Integer),
-            (ValueKind::String, ValueKind::String) => self.types.push(ValueKind::String),
-            (ValueKind::Float, ValueKind::Float)
-            | (ValueKind::Integer, ValueKind::Float)
-            | (ValueKind::Float, ValueKind::Integer) => self.types.push(ValueKind::Float),
-            (ValueKind::Nil, _) | (_, ValueKind::Nil) => {}
-            (a, b) => {
-                self.report_error(&format!(
-                    "Invalid types {:?}, {:?} for operator {:?}",
-                    a, b, node.op
-                ));
-            }
+        match node.op {
+            BinaryOpKind::And
+            | BinaryOpKind::Or
+            | BinaryOpKind::Equal
+            | BinaryOpKind::Greater
+            | BinaryOpKind::GreaterEqual
+            | BinaryOpKind::Lesser
+            | BinaryOpKind::LesserEqual
+            | BinaryOpKind::NotEqual => self.types.push(ValueKind::Bool),
+
+            BinaryOpKind::Add
+            | BinaryOpKind::Sub
+            | BinaryOpKind::Mul
+            | BinaryOpKind::Div
+            | BinaryOpKind::Mod => match (left, right) {
+                (ValueKind::Bool, ValueKind::Bool) => self.types.push(ValueKind::Bool),
+                (ValueKind::Integer, ValueKind::Integer) => self.types.push(ValueKind::Integer),
+                (ValueKind::String, ValueKind::String) => self.types.push(ValueKind::String),
+                (ValueKind::Float, ValueKind::Float)
+                | (ValueKind::Integer, ValueKind::Float)
+                | (ValueKind::Float, ValueKind::Integer) => self.types.push(ValueKind::Float),
+                (ValueKind::Nil, _) | (_, ValueKind::Nil) => {}
+                (a, b) => {
+                    self.report_error(&format!(
+                        "Invalid types {:?}, {:?} for operator {:?}",
+                        a, b, node.op
+                    ));
+                }
+            },
+
+            Field => unimplemented!(),
         }
     }
 
