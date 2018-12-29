@@ -1,8 +1,7 @@
+use crate::common::{InternedString, Symbol};
 use crate::location::Location;
 use crate::primitives::ValueKind;
 use crate::traits::{Visitable, Visitor};
-
-use std::rc::Rc;
 
 pub type StmtList = Vec<Stmt>;
 pub type ParamList = Vec<Param>;
@@ -41,8 +40,8 @@ pub struct Expr {
 pub enum ExprKind {
     Float(f32),
     Integer(i32),
-    StringLiteral(Rc<String>),
-    Ident(String),
+    StringLiteral(InternedString),
+    Ident(Symbol),
     Range(Range),
     Input(Input),
     Bool(bool),
@@ -53,7 +52,7 @@ pub enum ExprKind {
 
 #[derive(Debug, Clone)]
 pub struct Assignment {
-    pub ident: String,
+    pub ident: Symbol,
     pub value: Expr,
     pub op: AssignmentKind,
     pub location: Location,
@@ -117,20 +116,20 @@ pub enum Decl {
 
 #[derive(Debug, Clone)]
 pub struct VarDecl {
-    pub name: String,
+    pub name: Symbol,
     pub value: Expr,
     pub kind: ValueKind,
 }
 
 #[derive(Debug, Clone)]
 pub struct StructDecl {
-    pub name: String,
+    pub name: Symbol,
     pub fields: Vec<Param>,
 }
 
 #[derive(Debug, Clone)]
 pub struct FunctionDecl {
-    pub name: String,
+    pub name: Symbol,
     pub body: StmtList,
     pub params: Vec<Param>,
     pub return_type: Option<ValueKind>,
@@ -138,7 +137,7 @@ pub struct FunctionDecl {
 
 #[derive(Debug, Clone)]
 pub struct Param {
-    pub name: String,
+    pub name: Symbol,
     pub kind: ValueKind,
 }
 
@@ -151,7 +150,7 @@ pub struct If {
 
 #[derive(Debug, Clone)]
 pub struct For {
-    pub ident: String,
+    pub ident: Symbol,
     pub range: Range,
     pub block: StmtList,
 }
@@ -164,7 +163,7 @@ pub struct Range {
 
 #[derive(Debug, Clone)]
 pub struct FunctionCall {
-    pub name: String,
+    pub name: Symbol,
     pub args: Vec<Expr>,
 }
 

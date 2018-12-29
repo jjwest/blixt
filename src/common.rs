@@ -1,14 +1,28 @@
+use fxhash::FxHashMap;
 use termcolor::{BufferWriter, Color, ColorChoice, ColorSpec, WriteColor};
+use typed_arena::Arena;
 
-use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use std::slice;
+use std::str;
 
 use crate::location::Location;
 
+pub type InternedString = usize;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct Symbol(u32);
+
+impl Symbol {
+    pub fn new(n: u32) -> Self {
+        Symbol(n)
+    }
+}
+
 pub struct Context {
-    pub source_code: HashMap<PathBuf, String>,
+    pub source_code: FxHashMap<PathBuf, String>,
     pub interner: StringInterner,
     pub debug_mode: bool,
 }
@@ -16,14 +30,14 @@ pub struct Context {
 impl Context {
     pub fn new() -> Self {
         Self {
-            source_code: HashMap::new(),
+            source_code: FxHashMap::default(),
             interner: StringInterner::new(),
             debug_mode: false,
         }
     }
 
-    pub fn error(&mut self, message: &str, location: Location) {
-        let filename = self.interner.get(location.file as usize);
+    pub fn report_error(&mut self, message: &str, location: Location) {
+        let filename = self.interner.get(location.file);
 
         let source = self
             .source_code
@@ -90,26 +104,39 @@ impl Context {
 }
 
 pub struct StringInterner {
-    strings: Vec<String>,
+    arena: Arena<u8>,
+    strings: Vec<&'static str>,
+    symbols: FxHashMap<&'static str, usize>,
 }
 
 impl StringInterner {
     pub fn new() -> Self {
         Self {
+            arena: Arena::with_capacity(1024 * 1024),
             strings: Vec::new(),
+            symbols: FxHashMap::default(),
         }
     }
 
-    pub fn intern(&mut self, string: &str) -> usize {
-        if let Some(pos) = self.strings.iter().position(|s| s == string) {
-            pos
-        } else {
-            self.strings.push(string.to_string());
-            self.strings.len() - 1
+    pub fn intern(&mut self, string: &str) -> Symbol {
+        if let Some(sym) = self.symbols.get(string) {
+            return Symbol(*sym as u32);
         }
+
+        let len = string.len();
+        let string: &'static str = unsafe {
+            let mem = (*self.arena.alloc_uninitialized(len)).as_mut_ptr();
+            std::ptr::copy_nonoverlapping(string.as_ptr(), mem, len);
+            str::from_utf8_unchecked(slice::from_raw_parts(mem, len))
+        };
+
+        let sym = self.strings.len();
+        self.strings.push(string);
+        self.symbols.insert(string, sym);
+        Symbol(sym as u32)
     }
 
-    pub fn get(&self, string: usize) -> &str {
-        &self.strings[string]
+    pub fn get(&self, string: Symbol) -> &str {
+        &self.strings[string.0 as usize]
     }
 }

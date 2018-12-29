@@ -1,8 +1,8 @@
-pub type InternedString = usize;
+use crate::common::Symbol;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Location {
-    pub file: InternedString,
+    pub file: Symbol,
     pub line: u32,
     pub span: Span,
 }
@@ -11,14 +11,4 @@ pub struct Location {
 pub struct Span {
     pub start: u32,
     pub len: u32,
-}
-
-impl Default for Location {
-    fn default() -> Location {
-        Location {
-            file: 0,
-            line: 0,
-            span: Span { start: 0, len: 0 },
-        }
-    }
 }

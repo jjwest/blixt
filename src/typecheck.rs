@@ -2,7 +2,7 @@ use crate::ast::{
     Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, ExprKind, For,
     FunctionCall, FunctionDecl, If, Input, Print, Return, Stmt, StmtList, UnaryOp,
 };
-use crate::context::Context;
+use crate::common::Context;
 use crate::location::Location;
 use crate::primitives::{Value, ValueKind};
 use crate::scope::Scope;
@@ -52,7 +52,7 @@ impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
 
     fn report_error(&mut self, message: &str) {
         let location = self.location[self.location.len() - 1];
-        self.context.error(message, location);
+        self.context.report_error(message, location);
         self.check_passed = false;
         self.types.push(ValueKind::Nil);
     }
@@ -177,7 +177,7 @@ impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
                 }
             },
 
-            Field => unimplemented!(),
+            BinaryOpKind::Field => unimplemented!(),
         }
     }
 

@@ -3,7 +3,7 @@ use crate::ast::{
     FunctionCall, FunctionDecl, If, Input, Param, ParamList, Print, Range, Return, Stmt,
     StructDecl, UnaryOp, UnaryOpKind, VarDecl,
 };
-use crate::context::Context;
+use crate::common::Context;
 use crate::lexer::{Token, TokenKind};
 use crate::location::Location;
 use crate::primitives::ValueKind;
@@ -60,7 +60,7 @@ struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     fn report_error(&mut self, message: &str) {
-        self.context.error(message, self.location);
+        self.context.report_error(message, self.location);
     }
 
     fn peek_token(&self, pos: usize) -> Option<&Token> {

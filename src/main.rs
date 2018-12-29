@@ -1,38 +1,25 @@
-#![feature(nll)]
-
-#[macro_use]
-extern crate failure_derive;
-#[macro_use]
-extern crate log;
-
-mod ast;
-mod context;
-mod interpreter;
+// mod ast;
+mod common;
+// mod interpreter;
 mod lexer;
 mod location;
-mod parser;
+// mod parser;
+mod options;
 mod primitives;
-mod scope;
-mod traits;
-mod typecheck;
-
-use crate::context::Context;
+mod token;
+// mod scope;
+// mod traits;
+// mod typecheck;
 
 use std::env;
 
-fn main() {
+use crate::common::Context;
+use crate::options::Options;
+
+fn main() -> Result<(), ()> {
     pretty_env_logger::init().unwrap();
 
-    if let Err(e) = run() {
-        eprintln!("{}", e);
-    }
-}
-
-fn run() -> Result<(), failure::Error> {
-    let source_file = env::args()
-        .nth(1)
-        .ok_or_else(|| failure::err_msg("Missing argument FILE"))?;
-
+    let options = Options::parse();
     let mut context = Context::new();
 
     if let Ok(var) = env::var("BLIXT_DEBUG") {
@@ -42,16 +29,16 @@ fn run() -> Result<(), failure::Error> {
         }
     }
 
-    info!("Starting lexing");
-    let tokens = lexer::generate_tokens(&source_file, &mut context)?;
+    println!("Starting lexing");
+    let tokens = lexer::generate_tokens(&options.file, &mut context)?;
 
-    info!("Starting parsing");
-    let ast = parser::parse_ast(tokens, &mut context)?;
+    // info!("Starting parsing");
+    // let ast = parser::parse_ast(tokens, &mut context)?;
 
-    info!("Starting typechecking");
-    typecheck::typecheck(&ast, &mut context)?;
+    // info!("Starting typechecking");
+    // typecheck::typecheck(&ast, &mut context)?;
 
-    interpreter::interpret(&ast, &mut context);
+    // interpreter::interpret(&ast, &mut context);
 
     Ok(())
 }

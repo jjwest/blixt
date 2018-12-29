@@ -19,7 +19,7 @@ struct InnerScope<'ast> {
     parent: Option<usize>,
 }
 
-impl<'ast> InnerScope<'ast> {
+impl<'a, 'ast> InnerScope<'ast> {
     pub fn new(parent: Option<usize>) -> InnerScope<'ast> {
         InnerScope {
             functions: HashMap::new(),
@@ -79,7 +79,7 @@ impl<'ast> Scope<'ast> {
         })
     }
 
-    pub fn get_variable(&mut self, name: &'ast str) -> Option<&'ast Variable<'_>> {
+    pub fn get_variable(&mut self, name: &'ast str) -> Option<&Variable<'ast>> {
         let mut scope = &self.scopes[self.curr_scope];
 
         loop {
@@ -99,7 +99,7 @@ impl<'ast> Scope<'ast> {
         None
     }
 
-    pub fn get_variable_mut(&mut self, name: &str) -> Option<&'ast mut Variable<'_>> {
+    pub fn get_variable_mut(&mut self, name: &str) -> Option<&mut Variable<'ast>> {
         for scope in &mut self.scopes {
             for var in scope.variables.iter_mut().rev() {
                 if var.name == name {

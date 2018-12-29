@@ -1,407 +1,296 @@
-use itertools::Itertools;
-use log::LogLevel;
-
-use crate::context::Context;
-use crate::location::{InternedString, Location, Span};
+use crate::common::{Context, Symbol};
+use crate::location::{Location, Span};
+use crate::token::{Token, TokenKind};
 
 use std::collections::VecDeque;
 use std::fs;
-use std::iter::Peekable;
-use std::vec::IntoIter;
+use std::str;
 
-#[derive(Debug)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub location: Location,
+macro_rules! location {
+    ($self:expr, $start:expr) => {
+        Location {
+            line: $self.line,
+            file: $self.file,
+            span: Span {
+                start: $start as u32,
+                len: ($self.pos - $start) as u32,
+            },
+        }
+    };
 }
 
-#[derive(Debug, PartialEq)]
-pub enum TokenKind {
-    // Logical Operators
-    And,
-    Or,
-    Not,
+pub fn generate_tokens(file: &str, context: &mut Context) -> Result<VecDeque<Token>, ()> {
+    let interned_file = context.interner.intern(file);
+    let source = match fs::read(file) {
+        Ok(src) => src,
+        Err(e) => {
+            eprintln!("Error: failed to read source file ({})", e);
+            return Err(());
+        }
+    };
 
-    // Comparison operators
-    Equal,
-    Greater,
-    GreaterEqual,
-    Lesser,
-    LesserEqual,
-    NotEqual,
-
-    // operators
-    Assign,
-    AddAssign,
-    DivAssign,
-    MulAssign,
-    SubAssign,
-    ModAssign,
-
-    // Arithmetic operators
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-
-    Field,
-
-    // Declarations
-    FunctionDecl,
-    VarDecl,
-    StructDecl,
-
-    // Delimiters
-    CloseBrace,
-    CloseBracket,
-    CloseParen,
-    Comma,
-    SemiColon,
-    Colon,
-
-    ReturnDecl,
-    OpenBrace,
-    OpenBracket,
-    OpenParen,
-
-    // Keywords
-    If,
-    Else,
-    For,
-    Return,
-    While,
-    Range(i32, i32),
-    In,
-
-    Ident(String),
-    Bool(bool),
-    Integer(i32),
-    Float(f32),
-    String(String),
-
-    // Types
-    BoolType,
-    FloatType,
-    IntType,
-    StringType,
+    let lexer = Lexer::new(interned_file, context);
+    lexer.lex(source)
 }
-
-#[derive(Debug, Fail)]
-#[fail(display = "Lexer error")]
-struct Error;
 
 struct Lexer<'a> {
+    file: Symbol,
     line: u32,
     column: u32,
-    file: InternedString,
-    source: Peekable<IntoIter<char>>,
+    pos: usize,
+    source: Vec<u8>,
+    tokens: VecDeque<Token>,
     context: &'a mut Context,
 }
 
-pub fn generate_tokens(
-    file: &str,
-    context: &mut Context,
-) -> Result<VecDeque<Token>, failure::Error> {
-    let interned_file = context.interner.intern(file);
-    let source: Vec<char> = fs::read(file)?.into_iter().map(|c| c as char).collect();
-
-    let lexer = Lexer {
-        line: 1,
-        file: interned_file,
-        column: 1,
-        source: source.into_iter().peekable(),
-        context,
-    };
-
-    let tokens = lexer.collect::<Result<VecDeque<Token>, Error>>()?;
-
-    if log_enabled!(LogLevel::Debug) {
-        for token in &tokens {
-            debug!("{:?}", token);
+impl<'a> Lexer<'a> {
+    pub fn new(file: Symbol, context: &'a mut Context) -> Self {
+        Self {
+            file,
+            line: 1,
+            column: 1,
+            pos: 0,
+            tokens: VecDeque::new(),
+            source: Vec::new(),
+            context,
         }
     }
 
-    Ok(tokens)
-}
+    fn advance(&mut self) {
+        self.pos += 1;
+        self.column += 1;
+    }
 
-impl<'a> Iterator for Lexer<'a> {
-    type Item = Result<Token, Error>;
+    pub fn lex(mut self, source: Vec<u8>) -> Result<VecDeque<Token>, ()> {
+        self.source = source;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let start = self.column;
+        while self.pos < self.source.len() {
+            let start = self.pos;
+            let column = self.column;
 
-        match self.source.peek().unwrap_or(&'\0') {
-            '\n' => {
-                self.line += 1;
-                self.column = 1;
-                self.source.next();
-                self.next()
-            }
-            c if c.is_whitespace() => {
-                self.column += 1;
-                self.source.next();
-                self.next()
-            }
-            c if c.is_alphabetic() => {
-                let word: String = self
-                    .source
-                    .take_while_ref(|c| c.is_alphanumeric() || *c == '_')
-                    .collect();
+            match self.source[self.pos] as char {
+                '\n' => {
+                    self.line += 1;
+                    self.column = 1;
+                    self.pos += 1;
+                }
+                c if c.is_whitespace() => {
+                    self.advance();
+                }
+                c if c.is_alphabetic() => {
+                    self.advance();
+                    while self.pos < self.source.len() {
+                        let c = self.source[self.pos] as char;
+                        if !c.is_alphanumeric() && c != '_' {
+                            break;
+                        }
+                        self.advance();
+                    }
 
-                self.column += word.len() as u32;
+                    let location = location!(self, start);
 
-                let kind = match word.as_str() {
-                    "if" => TokenKind::If,
-                    "else" => TokenKind::Else,
-                    "for" => TokenKind::For,
-                    "in" => TokenKind::In,
-                    "while" => TokenKind::While,
-                    "fn" => TokenKind::FunctionDecl,
-                    "return" => TokenKind::Return,
-                    "string" => TokenKind::StringType,
-                    "float" => TokenKind::FloatType,
-                    "int" => TokenKind::IntType,
-                    "bool" => TokenKind::BoolType,
-                    "true" => TokenKind::Bool(true),
-                    "false" => TokenKind::Bool(false),
-                    "struct" => TokenKind::StructDecl,
-                    _ => TokenKind::Ident(word),
-                };
+                    let string = match str::from_utf8(&self.source[start..self.pos]) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            self.context.report_error("Invalid UTF-8", location);
+                            return Err(());
+                        }
+                    };
 
-                Some(Ok(Token {
-                    kind,
-                    location: Location {
-                        line: self.line,
-                        file: self.file,
-                        span: Span {
-                            start,
-                            len: self.column - start,
-                        },
-                    },
-                }))
-            }
-            c if c.is_numeric() => {
-                let mut number: String = self.source.take_while_ref(|c| c.is_numeric()).collect();
-                let mut is_float = false;
+                    let kind = match string {
+                        "if" => TokenKind::If,
+                        "else" => TokenKind::Else,
+                        "for" => TokenKind::For,
+                        "in" => TokenKind::In,
+                        "while" => TokenKind::While,
+                        "fn" => TokenKind::FunctionDecl,
+                        "return" => TokenKind::Return,
+                        "string" => TokenKind::StringType,
+                        "float" => TokenKind::FloatType,
+                        "int" => TokenKind::IntType,
+                        "bool" => TokenKind::BoolType,
+                        "true" => TokenKind::Bool(true),
+                        "false" => TokenKind::Bool(false),
+                        "struct" => TokenKind::StructDecl,
+                        _ => TokenKind::Ident(self.context.interner.intern(string)),
+                    };
 
-                if let Some(character) = self.source.peek() {
-                    if *character == '.' {
-                        self.source.next();
+                    let token = Token { kind, location };
+                    self.tokens.push_back(token);
+                }
+                c if c.is_numeric() => {
+                    self.advance();
 
-                        match self.source.peek() {
-                            Some(ch) if *ch == '.' => {
-                                let range_start = number.parse().unwrap();
-                                self.column += 1;
-                                self.source.next();
-                                number.clear();
-                                number.extend(self.source.take_while_ref(|c| c.is_numeric()));
+                    while self.pos < self.source.len() {
+                        let c = self.source[self.pos] as char;
+                        if !c.is_numeric() && c != '.' {
+                            break;
+                        }
+                        self.advance();
+                    }
 
-                                let range_end = number.parse().unwrap();
+                    let location = location!(self, start);
 
-                                return Some(Ok(Token {
-                                    kind: TokenKind::Range(range_start, range_end),
-                                    location: Location {
-                                        line: self.line,
-                                        file: self.file,
-                                        span: Span {
-                                            start,
-                                            len: self.column - start,
-                                        },
-                                    },
-                                }));
+                    let s = match str::from_utf8(&self.source[start..self.pos]) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            self.context.report_error("Invalid UTF-8", location);
+                            return Err(());
+                        }
+                    };
+
+                    let kind = if let Ok(integer) = s.parse() {
+                        TokenKind::Integer(integer)
+                    } else if let Ok(float) = s.parse() {
+                        TokenKind::Float(float)
+                    } else {
+                        self.context
+                            .report_error("Failed to parse number", location);
+                        return Err(());
+                    };
+
+                    self.tokens.push_back(Token { kind, location });
+                }
+                c if is_operator(c) => {
+                    self.advance();
+
+                    while self.pos < self.source.len() {
+                        let c = self.source[self.pos] as char;
+                        if !is_operator(c) {
+                            break;
+                        }
+                        self.advance();
+                    }
+
+                    let location = location!(self, start);
+
+                    let operator = match str::from_utf8(&self.source[start..self.pos]) {
+                        Ok(op) => op,
+                        Err(_) => {
+                            self.context.report_error("Invalid UTF-8", location);
+                            return Err(());
+                        }
+                    };
+
+                    if operator == "//" {
+                        while self.pos < self.source.len() {
+                            let c = self.source[self.pos] as char;
+                            self.advance();
+
+                            if c == '\n' {
+                                break;
                             }
-                            _ => {}
                         }
 
-                        number.push('.');
-                        number.extend(self.source.take_while_ref(|c| c.is_numeric()));
-                        is_float = true;
+                        continue;
                     }
+
+                    let kind = match operator {
+                        "&&" => TokenKind::And,
+                        "||" => TokenKind::Or,
+                        "==" => TokenKind::Equal,
+                        "!=" => TokenKind::NotEqual,
+                        "<=" => TokenKind::LesserEqual,
+                        ">=" => TokenKind::GreaterEqual,
+                        "+=" => TokenKind::AddAssign,
+                        "-=" => TokenKind::SubAssign,
+                        "*=" => TokenKind::MulAssign,
+                        "/=" => TokenKind::DivAssign,
+                        "%=" => TokenKind::ModAssign,
+                        ":=" => TokenKind::VarDecl,
+                        "->" => TokenKind::ReturnDecl,
+                        "=" => TokenKind::Assign,
+                        ">" => TokenKind::Greater,
+                        "<" => TokenKind::Lesser,
+                        "!" => TokenKind::Not,
+                        "+" => TokenKind::Add,
+                        "-" => TokenKind::Sub,
+                        "*" => TokenKind::Mul,
+                        "/" => TokenKind::Div,
+                        "%" => TokenKind::Mod,
+                        ":" => TokenKind::Colon,
+                        other => {
+                            self.context.report_error(
+                                &format!("Could not lex unknown operator '{}'", other),
+                                location!(self, start),
+                            );
+                            return Err(());
+                        }
+                    };
+
+                    self.tokens.push_back(Token {
+                        kind,
+                        location: location!(self, start),
+                    })
                 }
+                c if is_delimiter(c) => {
+                    let kind = match c {
+                        '(' => TokenKind::OpenParen,
+                        ')' => TokenKind::CloseParen,
+                        '[' => TokenKind::OpenBracket,
+                        ']' => TokenKind::CloseBracket,
+                        '{' => TokenKind::OpenBrace,
+                        '}' => TokenKind::CloseBrace,
+                        ':' => TokenKind::Colon,
+                        ';' => TokenKind::SemiColon,
+                        ',' => TokenKind::Comma,
+                        _ => unreachable!(),
+                    };
 
-                self.column += number.len() as u32;
+                    self.advance();
 
-                let kind = if is_float {
-                    TokenKind::Float(number.parse().unwrap())
-                } else {
-                    TokenKind::Integer(number.parse().unwrap())
-                };
-
-                Some(Ok(Token {
-                    kind,
-                    location: Location {
-                        line: self.line,
-                        file: self.file,
-                        span: Span {
-                            start,
-                            len: self.column - start,
-                        },
-                    },
-                }))
-            }
-            c if is_operator(*c) => {
-                let operator: String = self.source.take_while_ref(|ch| is_operator(*ch)).collect();
-                self.column += operator.len() as u32;
-
-                if operator == "//" {
-                    let _: Vec<_> = self.source.take_while_ref(|c| *c != '\n').collect();
-                    return self.next();
+                    self.tokens.push_back(Token {
+                        kind,
+                        location: location!(self, start),
+                    })
                 }
+                '"' => {
+                    self.advance();
 
-                if operator == "->" {
-                    return Some(Ok(Token {
-                        kind: TokenKind::ReturnDecl,
-                        location: Location {
-                            file: self.file,
-                            line: self.line,
-                            span: Span {
-                                start,
-                                len: self.column - start,
-                            },
-                        },
-                    }));
-                }
-
-                let kind = match operator.as_str() {
-                    "&&" => TokenKind::And,
-                    "||" => TokenKind::Or,
-                    "==" => TokenKind::Equal,
-                    "!=" => TokenKind::NotEqual,
-                    "<=" => TokenKind::LesserEqual,
-                    ">=" => TokenKind::GreaterEqual,
-                    "+=" => TokenKind::AddAssign,
-                    "-=" => TokenKind::SubAssign,
-                    "*=" => TokenKind::MulAssign,
-                    "/=" => TokenKind::DivAssign,
-                    "%=" => TokenKind::ModAssign,
-                    ":=" => TokenKind::VarDecl,
-                    "=" => TokenKind::Assign,
-                    ">" => TokenKind::Greater,
-                    "<" => TokenKind::Lesser,
-                    "!" => TokenKind::Not,
-                    "+" => TokenKind::Add,
-                    "-" => TokenKind::Sub,
-                    "*" => TokenKind::Mul,
-                    "/" => TokenKind::Div,
-                    "%" => TokenKind::Mod,
-                    ":" => TokenKind::Colon,
-                    other => {
-                        self.context.error(
-                            &format!("Could not lex unknown operator '{}'", other),
-                            Location {
-                                file: self.file,
-                                line: self.line,
-                                span: Span {
-                                    start: self.column,
-                                    len: other.len() as u32 - self.column,
-                                },
-                            },
-                        );
-                        return Some(Err(Error));
+                    while self.pos < self.source.len() {
+                        let c = self.source[self.pos] as char;
+                        self.advance();
+                        if c == '"' {
+                            break;
+                        }
                     }
-                };
 
-                Some(Ok(Token {
-                    kind,
-                    location: Location {
-                        line: self.line,
-                        file: self.file,
-                        span: Span {
-                            start,
-                            len: self.column - start,
-                        },
-                    },
-                }))
-            }
-            c if is_delimiter(*c) => {
-                let kind = match self.source.next().unwrap() {
-                    '(' => TokenKind::OpenParen,
-                    ')' => TokenKind::CloseParen,
-                    '[' => TokenKind::OpenBracket,
-                    ']' => TokenKind::CloseBracket,
-                    '{' => TokenKind::OpenBrace,
-                    '}' => TokenKind::CloseBrace,
-                    ':' => TokenKind::Colon,
-                    ';' => TokenKind::SemiColon,
-                    ',' => TokenKind::Comma,
-                    _ => unreachable!(),
-                };
+                    let location = location!(self, start);
 
-                self.column += 1;
+                    let string = match str::from_utf8(&self.source[start..self.pos]) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            self.context.report_error("Invalid UTF-8", location);
+                            return Err(());
+                        }
+                    };
 
-                Some(Ok(Token {
-                    kind,
-                    location: Location {
-                        file: self.file,
-                        line: self.line,
-                        span: Span {
-                            start,
-                            len: self.column - start,
-                        },
-                    },
-                }))
-            }
-            '"' => {
-                self.source.next();
-                let mut string_literal = String::new();
-                loop {
-                    string_literal.extend(self.source.take_while_ref(|c| *c != '"'));
-                    if string_literal.ends_with('\\') {
-                        string_literal.push('"');
-                        self.source.next();
-                    } else {
-                        break;
-                    }
+                    self.tokens.push_back(Token {
+                        kind: TokenKind::String(self.context.interner.intern(string)),
+                        location: location!(self, start),
+                    });
                 }
+                '.' => {
+                    self.advance();
 
-                self.source.next();
-                self.column += string_literal.len() as u32 + 2;
+                    self.tokens.push_back(Token {
+                        kind: TokenKind::Field,
+                        location: location!(self, start),
+                    })
+                }
+                other => {
+                    self.context.report_error(
+                        &format!("Could not lex unknown token '{}'", other),
+                        location!(self, start),
+                    );
 
-                Some(Ok(Token {
-                    kind: TokenKind::String(string_literal),
-                    location: Location {
-                        file: self.file,
-                        line: self.line,
-                        span: Span {
-                            start,
-                            len: self.column - start,
-                        },
-                    },
-                }))
-            }
-            '.' => {
-                self.source.next();
-
-                Some(Ok(Token {
-                    kind: TokenKind::Field,
-                    location: Location {
-                        file: self.file,
-                        line: self.line,
-                        span: Span {
-                            start: self.column,
-                            len: 1,
-                        },
-                    },
-                }))
-            }
-            '\0' => None,
-            other => {
-                self.context.error(
-                    &format!("Could not lex unknown token '{}'", other),
-                    Location {
-                        file: self.file,
-                        line: self.line,
-                        span: Span {
-                            start: self.column,
-                            len: 1,
-                        },
-                    },
-                );
-
-                Some(Err(Error))
+                    return Err(());
+                }
             }
         }
+
+        println!("{:#?}", self.tokens);
+        Ok(self.tokens)
     }
 }
 
@@ -418,19 +307,13 @@ mod tests {
     use super::*;
 
     fn assert_lex(source: &[u8], tokens: &[TokenKind]) {
-        let source: Vec<char> = source.iter().map(|c| *c as char).collect();
         let mut context = Context::new();
-        let lexer = Lexer {
-            file: 0,
-            line: 1,
-            column: 1,
-            source: source.into_iter().peekable(),
-            context: &mut context,
-        };
+        let lexer = Lexer::new(context.interner.intern("test.txt"), &mut context);
+        let lexed_tokens = lexer.lex(Vec::from(source));
+        assert!(lexed_tokens.is_ok());
 
-        for (token, expected) in lexer.zip(tokens) {
-            assert!(token.is_ok());
-            assert!(token.unwrap().kind == *expected);
+        for (found, expected) in lexed_tokens.unwrap().iter().zip(tokens) {
+            assert!(found.kind == *expected);
         }
     }
 
@@ -509,7 +392,7 @@ mod tests {
         assert_lex(
             b"age: int = 27",
             &[
-                TokenKind::Ident("age".to_owned()),
+                TokenKind::Ident(Symbol::new(1)),
                 TokenKind::Colon,
                 TokenKind::IntType,
                 TokenKind::Assign,
@@ -523,16 +406,16 @@ mod tests {
         assert_lex(
             b"hello // there friend\no",
             &[
-                TokenKind::Ident("hello".to_owned()),
-                TokenKind::Ident("o".to_owned()),
+                TokenKind::Ident(Symbol::new(1)),
+                TokenKind::Ident(Symbol::new(2)),
             ],
         )
     }
 
-    #[test]
-    fn lex_range() {
-        assert_lex(b" 5..10", &[TokenKind::Range(5, 10)]);
-    }
+    // #[test]
+    // fn lex_range() {
+    //     assert_lex(b" 5..10", &[TokenKind::Range(5, 10)]);
+    // }
 
     #[test]
     fn lex_int() {
@@ -560,8 +443,8 @@ mod tests {
         assert_lex(
             b"foo bar_Baz",
             &[
-                TokenKind::Ident("foo".to_owned()),
-                TokenKind::Ident("bar_Baz".to_owned()),
+                TokenKind::Ident(Symbol::new(1)),
+                TokenKind::Ident(Symbol::new(2)),
             ],
         )
     }
@@ -572,7 +455,7 @@ mod tests {
             b" if cool_things {} else true",
             &[
                 TokenKind::If,
-                TokenKind::Ident("cool_things".to_owned()),
+                TokenKind::Ident(Symbol::new(1)),
                 TokenKind::OpenBrace,
                 TokenKind::CloseBrace,
                 TokenKind::Else,

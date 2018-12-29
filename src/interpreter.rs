@@ -2,7 +2,7 @@ use crate::ast::{
     Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, ExprKind, For,
     FunctionCall, If, Input, Print, Return, Stmt, StmtList, UnaryOp, UnaryOpKind,
 };
-use crate::context::Context;
+use crate::common::Context;
 use crate::location::Location;
 use crate::primitives::{Value, ValueKind};
 use crate::scope::Scope;
