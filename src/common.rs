@@ -1,6 +1,6 @@
-use fxhash::FxHashMap;
+use copy_arena::Arena;
+use hashbrown::HashMap;
 use termcolor::{BufferWriter, Color, ColorChoice, ColorSpec, WriteColor};
-use typed_arena::Arena;
 
 use std::fs;
 use std::io::Write;
@@ -10,11 +10,10 @@ use std::str;
 
 use crate::location::Location;
 
-pub type InternedString = usize;
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, Hash, PartialEq)]
 pub struct Symbol(u32);
 
+#[cfg(test)]
 impl Symbol {
     pub fn new(n: u32) -> Self {
         Symbol(n)
@@ -22,7 +21,7 @@ impl Symbol {
 }
 
 pub struct Context {
-    pub source_code: FxHashMap<PathBuf, String>,
+    pub source_code: HashMap<PathBuf, String>,
     pub interner: StringInterner,
     pub debug_mode: bool,
 }
@@ -30,7 +29,7 @@ pub struct Context {
 impl Context {
     pub fn new() -> Self {
         Self {
-            source_code: FxHashMap::default(),
+            source_code: HashMap::default(),
             interner: StringInterner::new(),
             debug_mode: false,
         }
@@ -56,8 +55,10 @@ impl Context {
         writeln!(&mut buf, "       | {}{}", prelude, line).unwrap();
 
         if buf.supports_color() {
-            buf.set_color(&ColorSpec::new().set_bold(true).set_fg(Some(Color::Red)))
-                .unwrap();
+            buf.set_color(
+                &ColorSpec::new().set_bold(true).set_fg(Some(Color::Red)),
+            )
+            .unwrap();
             write!(&mut buf, "Error: ").unwrap();
             buf.reset().unwrap();
         } else {
@@ -71,8 +72,10 @@ impl Context {
         }
 
         if buf.supports_color() {
-            buf.set_color(&ColorSpec::new().set_bold(true).set_fg(Some(Color::Blue)))
-                .unwrap();
+            buf.set_color(
+                &ColorSpec::new().set_bold(true).set_fg(Some(Color::Blue)),
+            )
+            .unwrap();
 
             for _ in 0..location.span.len {
                 write!(&mut buf, "^").unwrap();
@@ -104,9 +107,9 @@ impl Context {
 }
 
 pub struct StringInterner {
-    arena: Arena<u8>,
+    arena: Arena,
     strings: Vec<&'static str>,
-    symbols: FxHashMap<&'static str, usize>,
+    symbols: HashMap<&'static str, u32>,
 }
 
 impl StringInterner {
@@ -114,26 +117,27 @@ impl StringInterner {
         Self {
             arena: Arena::with_capacity(1024 * 1024),
             strings: Vec::new(),
-            symbols: FxHashMap::default(),
+            symbols: HashMap::default(),
         }
     }
 
     pub fn intern(&mut self, string: &str) -> Symbol {
         if let Some(sym) = self.symbols.get(string) {
-            return Symbol(*sym as u32);
+            return Symbol(*sym);
         }
 
-        let len = string.len();
         let string: &'static str = unsafe {
-            let mem = (*self.arena.alloc_uninitialized(len)).as_mut_ptr();
-            std::ptr::copy_nonoverlapping(string.as_ptr(), mem, len);
-            str::from_utf8_unchecked(slice::from_raw_parts(mem, len))
+            let mut allocator = self.arena.allocator();
+            let len = string.len();
+            let s = allocator.alloc_slice(string.as_bytes()).as_ptr();
+            str::from_utf8_unchecked(slice::from_raw_parts(s, len))
         };
 
-        let sym = self.strings.len();
+        let sym = self.strings.len() as u32;
         self.strings.push(string);
         self.symbols.insert(string, sym);
-        Symbol(sym as u32)
+
+        Symbol(sym)
     }
 
     pub fn get(&self, string: Symbol) -> &str {

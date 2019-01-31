@@ -1,14 +1,17 @@
-use std::fmt;
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Rem, RemAssign, Sub, SubAssign};
-use std::rc::Rc;
+use std::ops::{
+    Add, AddAssign, Div, DivAssign, Mul, MulAssign, Rem, RemAssign, Sub,
+    SubAssign,
+};
 
-#[derive(Debug, Clone, PartialEq)]
+use crate::common::Symbol;
+
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ValueKind {
     Bool,
     String,
     Integer,
     Float,
-    Struct(Rc<String>),
+    Struct(Symbol),
     Nil,
 }
 
@@ -17,24 +20,9 @@ pub enum Value {
     Bool(bool),
     Int(i32),
     Float(f32),
-    String(Rc<String>),
-    Struct(Rc<String>),
+    String(Symbol),
+    Struct(Symbol),
     Nil,
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Value::Nil => write!(f, "nil")?,
-            Value::Bool(val) => write!(f, "{}", val)?,
-            Value::Int(val) => write!(f, "{}", val)?,
-            Value::Float(val) => write!(f, "{}", val)?,
-            Value::String(val) => write!(f, "{}", val)?,
-            Value::Struct(val) => write!(f, "{}", val)?,
-        }
-
-        Ok(())
-    }
 }
 
 impl Add for Value {
@@ -45,11 +33,6 @@ impl Add for Value {
             (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
             (Value::Int(a), Value::Float(b)) => Value::Float(a as f32 + b),
             (Value::Float(a), Value::Int(b)) => Value::Float(a + b as f32),
-            (Value::String(a), Value::String(b)) => {
-                let mut value = (*a).clone();
-                value.push_str(&*b);
-                Value::String(Rc::new(value))
-            }
             (a, b) => panic!("Cannot add a {:?} with a {:?}", a, b),
         }
     }
@@ -68,13 +51,6 @@ impl AddAssign for Value {
             value @ (Value::Int(_), Value::Float(_)) => {
                 if let (Value::Int(a), Value::Float(b)) = (&value.0, &value.1) {
                     *value.0 = Value::Float(*a as f32 + b);
-                }
-            }
-            value @ (Value::String(_), Value::String(_)) => {
-                if let (Value::String(a), Value::String(b)) = (&value.0, &value.1) {
-                    let mut new = (**a).clone();
-                    new.extend(b.chars());
-                    *value.0 = Value::String(Rc::new(new));
                 }
             }
             (a, b) => panic!("Cannot add a {:?} with a {:?}", a, b),

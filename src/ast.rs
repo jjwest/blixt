@@ -1,14 +1,16 @@
-use crate::common::{InternedString, Symbol};
+use crate::arena::{Arena, Id};
+use crate::common::Symbol;
 use crate::location::Location;
 use crate::primitives::ValueKind;
-use crate::traits::{Visitable, Visitor};
 
-pub type StmtList = Vec<Stmt>;
-pub type ParamList = Vec<Param>;
-pub type ArgList = Vec<Expr>;
+pub type AstNodeId = Id;
 
-#[derive(Debug)]
+pub type ArgList = Vec<AstNodeId>;
+pub type ParamList = Vec<AstNodeId>;
+pub type StmtList = Vec<AstNodeId>;
+
 pub struct Ast {
+    pub arena: Arena<Stmt>,
     pub statements: StmtList,
 }
 
@@ -22,11 +24,28 @@ pub enum Stmt {
     Print(Print),
     If(If),
     Return(Return),
+    Param(Param),
 }
+
+macro_rules! accessor {
+    ($name:ident, $type:ty, $pattern:pat, $value:expr) => {
+        impl Stmt {
+            pub fn $name(&self) -> &$type {
+                match self {
+                    $pattern => $value,
+                    _ => panic!(concat!("Node not a ", stringify!(name))),
+                }
+            }
+        }
+    };
+}
+
+accessor!(assignment, Assignment, Stmt::Assignment(a), a);
+accessor!(expr, Expr, Stmt::Expr(a), a);
 
 #[derive(Debug, Clone)]
 pub struct Return {
-    pub value: Option<Expr>,
+    pub value: Option<AstNodeId>,
     pub location: Location,
 }
 
@@ -40,7 +59,7 @@ pub struct Expr {
 pub enum ExprKind {
     Float(f32),
     Integer(i32),
-    StringLiteral(InternedString),
+    StringLiteral(Symbol),
     Ident(Symbol),
     Range(Range),
     Input(Input),
@@ -53,7 +72,7 @@ pub enum ExprKind {
 #[derive(Debug, Clone)]
 pub struct Assignment {
     pub ident: Symbol,
-    pub value: Expr,
+    pub value: AstNodeId,
     pub op: AssignmentKind,
     pub location: Location,
 }
@@ -70,7 +89,7 @@ pub enum AssignmentKind {
 
 #[derive(Debug, Clone)]
 pub struct UnaryOp {
-    pub value: Box<Expr>,
+    pub value: AstNodeId,
     pub op: UnaryOpKind,
 }
 
@@ -82,8 +101,8 @@ pub enum UnaryOpKind {
 
 #[derive(Debug, Clone)]
 pub struct BinaryOp {
-    pub lhs: Box<Expr>,
-    pub rhs: Box<Expr>,
+    pub lhs: AstNodeId,
+    pub rhs: AstNodeId,
     pub op: BinaryOpKind,
 }
 
@@ -117,21 +136,21 @@ pub enum Decl {
 #[derive(Debug, Clone)]
 pub struct VarDecl {
     pub name: Symbol,
-    pub value: Expr,
+    pub value: AstNodeId,
     pub kind: ValueKind,
 }
 
 #[derive(Debug, Clone)]
 pub struct StructDecl {
     pub name: Symbol,
-    pub fields: Vec<Param>,
+    pub fields: Vec<AstNodeId>,
 }
 
 #[derive(Debug, Clone)]
 pub struct FunctionDecl {
     pub name: Symbol,
     pub body: StmtList,
-    pub params: Vec<Param>,
+    pub params: Vec<AstNodeId>,
     pub return_type: Option<ValueKind>,
 }
 
@@ -143,9 +162,9 @@ pub struct Param {
 
 #[derive(Debug, Clone)]
 pub struct If {
-    pub cond: Expr,
+    pub cond: AstNodeId,
     pub body: StmtList,
-    pub else_body: Option<Box<Stmt>>,
+    pub else_body: Option<StmtList>,
 }
 
 #[derive(Debug, Clone)]
@@ -164,7 +183,7 @@ pub struct Range {
 #[derive(Debug, Clone)]
 pub struct FunctionCall {
     pub name: Symbol,
-    pub args: Vec<Expr>,
+    pub args: Vec<AstNodeId>,
 }
 
 #[derive(Debug, Clone)]
@@ -174,62 +193,5 @@ pub struct Print {
 
 #[derive(Debug, Clone)]
 pub struct Input {
-    pub message: Option<Box<Expr>>,
-}
-
-impl<'a> Visitable<'a> for Ast {
-    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
-        self.statements.accept(visitor)
-    }
-}
-
-impl<'a> Visitable<'a> for StmtList {
-    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
-        visitor.visit_stmt_list(self)
-    }
-}
-
-impl<'a> Visitable<'a> for Stmt {
-    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
-        match &self {
-            Stmt::Assignment(a) => visitor.visit_assignment(a),
-            Stmt::Block(a) => visitor.visit_block(a),
-            Stmt::Print(a) => visitor.visit_print(a),
-            Stmt::Decl(a) => visitor.visit_decl(a),
-            Stmt::Expr(a) => visitor.visit_expr(a),
-            Stmt::For(a) => visitor.visit_for(a),
-            Stmt::If(a) => visitor.visit_if_stmt(a),
-            Stmt::Return(a) => visitor.visit_return(a),
-        }
-    }
-}
-
-impl<'a> Visitable<'a> for Expr {
-    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
-        visitor.visit_expr(self)
-    }
-}
-
-impl<'a> Visitable<'a> for BinaryOp {
-    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
-        visitor.visit_binary_op(self)
-    }
-}
-
-impl<'a> Visitable<'a> for UnaryOp {
-    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
-        visitor.visit_unary_op(self)
-    }
-}
-
-impl<'a> Visitable<'a> for Decl {
-    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
-        visitor.visit_decl(self)
-    }
-}
-
-impl<'a> Visitable<'a> for If {
-    fn accept<V: Visitor<'a>>(&'a self, visitor: &mut V) {
-        visitor.visit_if_stmt(self)
-    }
+    pub message: Option<AstNodeId>,
 }

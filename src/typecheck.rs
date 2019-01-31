@@ -1,323 +1,151 @@
+use log::trace;
+
 use crate::ast::{
-    Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, ExprKind, For,
-    FunctionCall, FunctionDecl, If, Input, Print, Return, Stmt, StmtList, UnaryOp,
+    ArgList, Assignment, AssignmentKind, Ast, AstNodeId, BinaryOp,
+    BinaryOpKind, Decl, Expr, ExprKind, For, FunctionCall, FunctionDecl, If,
+    Input, ParamList, Print, Return, Stmt, StmtList, UnaryOp,
 };
-use crate::common::Context;
+use crate::common::{Context, Symbol};
 use crate::location::Location;
+
 use crate::primitives::{Value, ValueKind};
 use crate::scope::Scope;
-use crate::traits::{Visitable, Visitor};
 
-pub fn typecheck(ast: &Ast, context: &mut Context) -> Result<(), failure::Error> {
-    let mut checker = Typechecker::new(context);
-    ast.accept(&mut checker);
-    checker.check_deferred_function_calls();
+pub fn typecheck(ast: &Ast, context: &mut Context) -> Result<(), ()> {
+    let mut checker = Typechecker {
+        ast,
+        check_passed: true,
+        scope: Scope::new(),
+        context,
+        location: vec![],
+        deferred_function_calls: vec![],
+        current_function: None,
+    };
+
+    checker.check_stmt_list(&ast.statements);
 
     if checker.check_passed {
         Ok(())
     } else {
-        Err(failure::err_msg(""))
+        Err(())
     }
 }
 
-struct Typechecker<'a, 'ctxt> {
-    types: Vec<ValueKind>,
+struct Typechecker<'ctxt> {
+    ast: &'ctxt Ast,
     check_passed: bool,
-    scope: Scope<'a>,
+    scope: Scope,
     context: &'ctxt mut Context,
     location: Vec<Location>,
-    deferred_function_calls: Vec<&'a FunctionCall>,
-    current_function: Option<&'a FunctionDecl>,
+    deferred_function_calls: Vec<FunctionCall>,
+    current_function: Option<FunctionDecl>,
 }
 
-impl<'a, 'ctxt> Typechecker<'a, 'ctxt> {
-    pub fn new(context: &'ctxt mut Context) -> Self {
-        Self {
-            types: Vec::new(),
-            check_passed: true,
-            scope: Scope::new(),
-            location: Vec::new(),
-            context,
-            deferred_function_calls: Vec::new(),
-            current_function: None,
-        }
-    }
-
-    fn type_of<T: Visitable<'a>>(&mut self, node: &'a T) -> ValueKind {
-        node.accept(self);
-        self.types
-            .pop()
-            .expect("Tried calling type_of, but no type found")
-    }
-
+impl<'ctxt> Typechecker<'ctxt> {
     fn report_error(&mut self, message: &str) {
-        let location = self.location[self.location.len() - 1];
-        self.context.report_error(message, location);
         self.check_passed = false;
-        self.types.push(ValueKind::Nil);
+        self.context
+            .report_error(message, self.location[self.location.len() - 1]);
     }
 
-    fn check_deferred_function_calls(&mut self) {
-        let calls = self.deferred_function_calls.clone();
+    fn check_stmt_list(&mut self, stmts: &StmtList) {
+        trace!("stmt_list");
 
-        for node in calls {
-            self.scope.push_scope();
-            match self.scope.get_function(&node.name) {
-                Some(func) => {
-                    for param in &func.params {
-                        self.scope
-                            .add_variable(&param.name, Value::Nil, param.kind.clone());
-                    }
-                    self.visit_function_call(node);
-                }
-                None => {
-                    self.report_error(&format!("Undefined function '{}'", node.name));
-                }
-            }
-            self.scope.pop_scope();
-        }
-    }
-}
+        use Stmt::*;
 
-impl<'a, 'ctxt> Visitor<'a> for Typechecker<'a, 'ctxt> {
-    fn visit_stmt_list(&mut self, node: &'a StmtList) {
-        trace!("Visiting stmt_list");
-
-        for stmt in node {
-            stmt.accept(self);
+        for stmt in stmts {
+            match &self.ast.arena[*stmt] {
+                Assignment(v) => unimplemented!(),
+                Block(v) => unimplemented!(),
+                Decl(v) => unimplemented!(),
+                Expr(v) => self.check_expr(v),
+                For(v) => unimplemented!(),
+                Print(v) => unimplemented!(),
+                If(v) => unimplemented!(),
+                Return(v) => unimplemented!(),
+                Param(v) => unimplemented!(),
+            };
         }
     }
 
-    fn visit_stmt(&mut self, node: &'a Stmt) {
-        trace!("Visiting stmt");
-        node.accept(self)
-    }
+    fn check_expr(&mut self, expr: &Expr) -> ValueKind {
+        trace!("Expr");
 
-    fn visit_expr(&mut self, node: &'a Expr) {
-        trace!("Visiting expr {:#?}", node);
-        self.location.push(node.location);
+        use ExprKind::*;
 
-        match &node.kind {
-            ExprKind::Bool(_) => self.types.push(ValueKind::Bool),
-            ExprKind::Float(_) => self.types.push(ValueKind::Float),
-            ExprKind::Integer(_) => self.types.push(ValueKind::Integer),
-            ExprKind::StringLiteral(_) => self.types.push(ValueKind::String),
-            ExprKind::Ident(ident) => self.visit_ident(ident),
-            ExprKind::Range(_) => unimplemented!(),
-            ExprKind::Input(_) => self.types.push(ValueKind::String),
-            ExprKind::UnaryOp(op) => self.visit_unary_op(op),
-            ExprKind::BinaryOp(op) => self.visit_binary_op(op),
-            ExprKind::FunctionCall(func) => self.visit_function_call(func),
-        }
+        self.location.push(expr.location);
+
+        let kind = match &expr.kind {
+            Bool(_) => ValueKind::Bool,
+            Float(_) => ValueKind::Float,
+            Integer(_) => ValueKind::Integer,
+            StringLiteral(_) => ValueKind::String,
+            Ident(v) => self.check_ident(*v),
+            Range(_) => unimplemented!(),
+            Input(_) => unimplemented!(),
+            UnaryOp(_) => unimplemented!(),
+            BinaryOp(v) => self.check_binop(v),
+            FunctionCall(_) => unimplemented!(),
+        };
 
         self.location.pop();
+
+        kind
     }
 
-    fn visit_decl(&mut self, node: &'a Decl) {
-        trace!("Visiting decl");
+    fn check_binop(&mut self, binop: &BinaryOp) -> ValueKind {
+        trace!("Binop");
 
-        match node {
-            Decl::Variable(decl) => {
-                if decl.kind == ValueKind::Nil {
-                    let kind = self.type_of(&decl.value);
-                    self.scope.add_variable(&decl.name, Value::Nil, kind);
-                }
-            }
-            Decl::Function(decl) => {
-                self.current_function = Some(decl);
-                self.scope.add_function(&decl);
-                self.scope.push_scope();
+        use BinaryOpKind::*;
+        use ValueKind::*;
 
-                for param in &decl.params {
-                    self.scope
-                        .add_variable(&param.name, Value::Nil, param.kind.clone());
-                }
+        let lhs = self.check_expr(self.ast.arena[binop.lhs].expr());
+        let rhs = self.check_expr(self.ast.arena[binop.rhs].expr());
 
-                self.visit_stmt_list(&decl.body);
-                self.scope.pop_scope();
-                self.current_function = None;
-            }
-            Decl::Struct(decl) => self.scope.add_struct(decl),
-        }
-    }
+        match binop.op {
+            And | Or | Equal | Greater | GreaterEqual | Lesser
+            | LesserEqual | NotEqual => Bool,
 
-    fn visit_binary_op(&mut self, node: &'a BinaryOp) {
-        trace!("Visiting binop");
+            Field => unimplemented!(),
 
-        let left = self.type_of(&*node.lhs);
-        let right = self.type_of(&*node.rhs);
-
-        match node.op {
-            BinaryOpKind::And
-            | BinaryOpKind::Or
-            | BinaryOpKind::Equal
-            | BinaryOpKind::Greater
-            | BinaryOpKind::GreaterEqual
-            | BinaryOpKind::Lesser
-            | BinaryOpKind::LesserEqual
-            | BinaryOpKind::NotEqual => self.types.push(ValueKind::Bool),
-
-            BinaryOpKind::Add
-            | BinaryOpKind::Sub
-            | BinaryOpKind::Mul
-            | BinaryOpKind::Div
-            | BinaryOpKind::Mod => match (left, right) {
-                (ValueKind::Bool, ValueKind::Bool) => self.types.push(ValueKind::Bool),
-                (ValueKind::Integer, ValueKind::Integer) => self.types.push(ValueKind::Integer),
-                (ValueKind::String, ValueKind::String) => self.types.push(ValueKind::String),
-                (ValueKind::Float, ValueKind::Float)
-                | (ValueKind::Integer, ValueKind::Float)
-                | (ValueKind::Float, ValueKind::Integer) => self.types.push(ValueKind::Float),
-                (ValueKind::Nil, _) | (_, ValueKind::Nil) => {}
+            Add | Sub | Mul | Div | Mod => match (lhs, rhs) {
+                (Bool, Bool) => Bool,
+                (Integer, Integer) => Integer,
+                (String, String) => String,
+                (Float, Float) => Float,
+                (Integer, Float) | (Float, Integer) => Float,
+                (Nil, other) | (other, Nil) => other,
                 (a, b) => {
                     self.report_error(&format!(
                         "Invalid types {:?}, {:?} for operator {:?}",
-                        a, b, node.op
+                        a, b, binop.op
                     ));
+                    Nil
                 }
             },
-
-            BinaryOpKind::Field => unimplemented!(),
         }
     }
 
-    fn visit_unary_op(&mut self, node: &'a UnaryOp) {
-        trace!("Visiting unaryop");
+    fn check_ident(&mut self, ident: Symbol) -> ValueKind {
+        trace!("ident");
 
-        let type_ = self.type_of(&*node.value);
-        self.types.push(type_);
-    }
-
-    fn visit_function_call(&mut self, node: &'a FunctionCall) {
-        trace!("Visiting function call");
-
-        let function = match self.scope.get_function(&node.name) {
-            Some(func) => func,
+        match self.scope.get_variable(ident) {
+            Some(var) => var.kind,
             None => {
-                self.deferred_function_calls.push(node);
-                return;
-            }
-        };
-
-        if node.args.len() != function.params.len() {
-            self.report_error(&format!(
-                "Expected {} arguments, found {}",
-                node.args.len(),
-                function.params.len()
-            ));
-        }
-
-        for (arg, param) in node.args.iter().zip(function.params.iter()) {
-            let arg_type = self.type_of(arg);
-            // If the argument type is still undecided it means
-            // the variable was never declared, so no check is done.
-            // An error message is printed via type_of -> node.accept -> visit_ident
-            if arg_type != ValueKind::Nil && arg_type != param.kind {
-                self.location.push(arg.location);
-                self.report_error(&format!("Expected {:?}, found {:?}", param.kind, arg_type));
-                self.location.pop();
-            }
-        }
-
-        self.types.push(
-            function
-                .return_type
-                .as_ref()
-                .map(|kind| kind.clone())
-                .unwrap_or(ValueKind::Nil),
-        );
-    }
-
-    fn visit_if_stmt(&mut self, _node: &'a If) {
-        trace!("Visiting if_stmt");
-    }
-
-    fn visit_ident(&mut self, node: &'a str) {
-        trace!("Visiting ident");
-        match self.scope.get_variable(node) {
-            Some(var) => self.types.push(var.kind.clone()),
-            None => {
-                self.report_error(&format!("Undeclared variable '{}'", node));
-            }
-        }
-    }
-
-    fn visit_return(&mut self, node: &'a Return) {
-        trace!("Visiting return stmt");
-
-        self.location.push(node.location);
-
-        if let Some(func) = self.current_function {
-            let return_type = node.value.as_ref().map(|expr| self.type_of(&*expr));
-            match (&func.return_type, &return_type) {
-                (None, Some(a)) => {
-                    self.report_error(&format!("No return value expected, found {:?}", a));
-                }
-                (Some(a), None) => {
-                    self.report_error(&format!("Expected return value of type {:?}", a));
-                }
-                (Some(a), Some(b)) if a != b => {
-                    self.report_error(&format!("Expected return value {:?}, found {:?}", a, b));
-                }
-                _ => {}
-            }
-        } else {
-            self.report_error("Cannot use keyword return outside of a function");
-        }
-
-        self.location.pop();
-    }
-
-    fn visit_block(&mut self, _node: &'a StmtList) {
-        trace!("Visiting block");
-    }
-
-    fn visit_assignment(&mut self, node: &'a Assignment) {
-        trace!("Visiting assignment {} = {:#?}", node.ident, node.value);
-
-        self.location.push(node.location);
-
-        let lhs = self
-            .scope
-            .get_variable(node.ident.as_str())
-            .map(|var| var.kind.clone())
-            .unwrap_or_else(|| panic!(format!("{} has not been typechecked", node.ident)));
-
-        let rhs = self.type_of(&node.value);
-
-        match (&lhs, &rhs) {
-            (ValueKind::Bool, ValueKind::Bool) => self.types.push(ValueKind::Bool),
-            (ValueKind::Integer, ValueKind::Integer) => self.types.push(ValueKind::Integer),
-            (ValueKind::String, ValueKind::String) => self.types.push(ValueKind::String),
-            (ValueKind::Float, ValueKind::Float) => self.types.push(ValueKind::Float),
-            (ValueKind::Integer, ValueKind::Float) | (ValueKind::Float, ValueKind::Integer) => {
-                if node.op != AssignmentKind::Assign {
-                    self.report_error(&format!(
-                        "Invalid types {:?}, {:?} for operator {:?}",
-                        lhs, rhs, node.op
-                    ));
-                }
-            }
-            (a, b) => {
                 self.report_error(&format!(
-                    "Invalid types {:?}, {:?} for operator {:?}",
-                    a, b, node.op
+                    "Variable '{}' is undefined",
+                    self.context.interner.get(ident)
                 ));
+                ValueKind::Nil
             }
         }
-
-        self.location.pop();
     }
+}
 
-    fn visit_print(&mut self, _node: &'a Print) {
-        trace!("Visiting print");
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    fn visit_input(&mut self, _node: &'a Input) {
-        trace!("Visiting input");
-    }
-
-    fn visit_for(&mut self, _node: &'a For) {
-        trace!("Visiting for");
-    }
+    #[test]
+    fn arithmetic_expr() {}
 }

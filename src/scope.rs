@@ -1,26 +1,24 @@
-use crate::ast::{FunctionDecl, StructDecl};
+use hashbrown::HashMap;
+
+use crate::ast::AstNodeId;
+use crate::common::Symbol;
 use crate::primitives::{Value, ValueKind};
 
-use std::collections::HashMap;
-
-pub type FuncName<'ast> = &'ast str;
-pub type StructName<'ast> = &'ast str;
-
-pub struct Scope<'ast> {
-    scopes: Vec<InnerScope<'ast>>,
+pub struct Scope {
+    scopes: Vec<InnerScope>,
     curr_scope: usize,
 }
 
-struct InnerScope<'ast> {
-    functions: HashMap<FuncName<'ast>, &'ast FunctionDecl>,
-    user_defined_types: HashMap<StructName<'ast>, &'ast StructDecl>,
-    variables: Vec<Variable<'ast>>,
+struct InnerScope {
+    functions: HashMap<Symbol, AstNodeId>,
+    user_defined_types: HashMap<Symbol, AstNodeId>,
+    variables: Vec<Variable>,
     level: usize,
     parent: Option<usize>,
 }
 
-impl<'a, 'ast> InnerScope<'ast> {
-    pub fn new(parent: Option<usize>) -> InnerScope<'ast> {
+impl InnerScope {
+    pub fn new(parent: Option<usize>) -> InnerScope {
         InnerScope {
             functions: HashMap::new(),
             user_defined_types: HashMap::new(),
@@ -31,15 +29,15 @@ impl<'a, 'ast> InnerScope<'ast> {
     }
 }
 
-pub struct Variable<'ast> {
-    pub name: &'ast str,
+pub struct Variable {
+    pub name: Symbol,
     pub kind: ValueKind,
     pub value: Value,
     pub defined_in_scope_level: usize,
 }
 
-impl<'ast> Scope<'ast> {
-    pub fn new() -> Scope<'ast> {
+impl Scope {
+    pub fn new() -> Scope {
         Scope {
             scopes: vec![InnerScope::new(None)],
             curr_scope: 0,
@@ -69,7 +67,12 @@ impl<'ast> Scope<'ast> {
         curr_scope.level -= 1;
     }
 
-    pub fn add_variable(&mut self, name: &'ast str, value: Value, kind: ValueKind) {
+    pub fn add_variable(
+        &mut self,
+        name: Symbol,
+        value: Value,
+        kind: ValueKind,
+    ) {
         let curr_scope = &mut self.scopes[self.curr_scope];
         curr_scope.variables.push(Variable {
             name,
@@ -79,7 +82,7 @@ impl<'ast> Scope<'ast> {
         })
     }
 
-    pub fn get_variable(&mut self, name: &'ast str) -> Option<&Variable<'ast>> {
+    pub fn get_variable(&mut self, name: Symbol) -> Option<&Variable> {
         let mut scope = &self.scopes[self.curr_scope];
 
         loop {
@@ -99,7 +102,7 @@ impl<'ast> Scope<'ast> {
         None
     }
 
-    pub fn get_variable_mut(&mut self, name: &str) -> Option<&mut Variable<'ast>> {
+    pub fn get_variable_mut(&mut self, name: Symbol) -> Option<&mut Variable> {
         for scope in &mut self.scopes {
             for var in scope.variables.iter_mut().rev() {
                 if var.name == name {
@@ -111,17 +114,17 @@ impl<'ast> Scope<'ast> {
         None
     }
 
-    pub fn add_function(&mut self, func: &'ast FunctionDecl) {
+    pub fn add_function(&mut self, name: Symbol, decl: AstNodeId) {
         let scope = &mut self.scopes[self.curr_scope];
-        scope.functions.insert(func.name.as_str(), func);
+        scope.functions.insert(name, decl);
     }
 
-    pub fn get_function(&mut self, name: &str) -> Option<&'ast FunctionDecl> {
+    pub fn get_function(&mut self, name: Symbol) -> Option<AstNodeId> {
         let mut scope = &mut self.scopes[self.curr_scope];
 
         loop {
-            if let Some(func) = scope.functions.get(name) {
-                return Some(func);
+            if let Some(func) = scope.functions.get(&name) {
+                return Some(*func);
             }
 
             if let Some(parent) = scope.parent {
@@ -132,19 +135,17 @@ impl<'ast> Scope<'ast> {
         }
     }
 
-    pub fn add_struct(&mut self, structure: &'ast StructDecl) {
+    pub fn add_struct(&mut self, name: Symbol, decl: AstNodeId) {
         let scope = &mut self.scopes[self.curr_scope];
-        scope
-            .user_defined_types
-            .insert(structure.name.as_str(), structure);
+        scope.user_defined_types.insert(name, decl);
     }
 
-    pub fn get_struct(&mut self, name: &str) -> Option<&'ast StructDecl> {
+    pub fn get_struct(&mut self, name: Symbol) -> Option<AstNodeId> {
         let mut scope = &mut self.scopes[self.curr_scope];
 
         loop {
-            if let Some(structure) = scope.user_defined_types.get(name) {
-                return Some(structure);
+            if let Some(structure) = scope.user_defined_types.get(&name) {
+                return Some(*structure);
             }
 
             if let Some(parent) = scope.parent {

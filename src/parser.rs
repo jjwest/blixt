@@ -1,29 +1,39 @@
+use std::collections::VecDeque;
+
+use log::trace;
+
+use crate::arena::Arena;
 use crate::ast::{
-    ArgList, Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, ExprKind, For,
-    FunctionCall, FunctionDecl, If, Input, Param, ParamList, Print, Range, Return, Stmt,
-    StructDecl, UnaryOp, UnaryOpKind, VarDecl,
+    ArgList, Assignment, AssignmentKind, Ast, AstNodeId, BinaryOp,
+    BinaryOpKind, Decl, Expr, ExprKind, FunctionCall, FunctionDecl, If, Input,
+    Param, ParamList, Print, Return, Stmt, StructDecl, UnaryOp, UnaryOpKind,
+    VarDecl,
 };
-use crate::common::Context;
-use crate::lexer::{Token, TokenKind};
+use crate::common::{Context, Symbol};
 use crate::location::Location;
 use crate::primitives::ValueKind;
+use crate::token::{Token, TokenKind};
 
-use failure;
+pub type Result<T> = std::result::Result<T, ()>;
 
-use std::collections::VecDeque;
-use std::rc::Rc;
+pub fn parse_ast(
+    tokens: VecDeque<Token>,
+    context: &mut Context,
+) -> Result<Ast> {
+    let mut arena = Arena::new();
 
-pub fn parse_ast(tokens: VecDeque<Token>, context: &mut Context) -> Result<Ast, failure::Error> {
     let location = match tokens.get(0) {
         Some(token) => token.location,
         None => {
             return Ok(Ast {
-                statements: Vec::new(),
-            })
+                arena,
+                statements: vec![],
+            });
         }
     };
 
     let mut parser = Parser {
+        arena: &mut arena,
         context,
         tokens,
         location,
@@ -31,28 +41,14 @@ pub fn parse_ast(tokens: VecDeque<Token>, context: &mut Context) -> Result<Ast, 
 
     let statements = match parser.statement_list() {
         Ok(stmts) => stmts,
-        Err(_) => return Err(failure::err_msg("")),
+        Err(_) => return Err(()),
     };
 
-    Ok(Ast { statements })
-}
-
-fn join_locations(a: Location, b: Location) -> Location {
-    let (mut smaller, larger) = {
-        if a.span.start < b.span.start {
-            (a, b)
-        } else {
-            (b, a)
-        }
-    };
-
-    smaller.span.len +=
-        larger.span.start - (smaller.span.start + smaller.span.len) + larger.span.len;
-
-    smaller
+    Ok(Ast { arena, statements })
 }
 
 struct Parser<'a> {
+    arena: &'a mut Arena<Stmt>,
     context: &'a mut Context,
     tokens: VecDeque<Token>,
     location: Location,
@@ -87,12 +83,15 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn expect_next(&mut self, kind: TokenKind) -> Result<Token, ()> {
+    fn expect_next(&mut self, kind: TokenKind) -> Result<Token> {
         if let Some(token) = self.next_token() {
             if token.kind == kind {
                 Ok(token)
             } else {
-                self.report_error(&format!("Expected {:?}, found {:?}", kind, token.kind));
+                self.report_error(&format!(
+                    "Expected {:?}, found {:?}",
+                    kind, token.kind
+                ));
                 Err(())
             }
         } else {
@@ -101,18 +100,17 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn statement_list(&mut self) -> Result<Vec<Stmt>, ()> {
+    fn statement_list(&mut self) -> Result<Vec<AstNodeId>> {
         trace!("Entered statement_list");
 
         let mut stmts = Vec::new();
         while let Some(stmt) = self.statement()? {
-            debug!("Parsed STMT {:#?}", stmt);
             stmts.push(stmt);
         }
         Ok(stmts)
     }
 
-    fn statement(&mut self) -> Result<Option<Stmt>, ()> {
+    fn statement(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered statement: {:?}", self.peek_token_kind(0));
 
         if let Some(print) = self.print()? {
@@ -121,8 +119,6 @@ impl<'a> Parser<'a> {
             Ok(Some(decl))
         } else if let Some(if_stmt) = self.if_statement()? {
             Ok(Some(if_stmt))
-        } else if let Some(for_loop) = self.for_loop()? {
-            Ok(Some(for_loop))
         } else if let Some(keyword) = self.keyword()? {
             Ok(Some(keyword))
         } else if let Some(block) = self.block()? {
@@ -134,75 +130,75 @@ impl<'a> Parser<'a> {
         } else if let Some(decl) = self.declaration()? {
             Ok(Some(decl))
         } else if let Some(expr) = self.expression()? {
-            Ok(Some(Stmt::Expr(expr)))
+            Ok(Some(expr))
         } else {
             Ok(None)
         }
     }
 
-    fn for_loop(&mut self) -> Result<Option<Stmt>, ()> {
-        trace!("Entered for_loop");
+    // fn for_loop(&mut self) -> Result<Option<Stmt>> {
+    //     trace!("Entered for_loop");
 
-        match self.peek_token_kind(0) {
-            Some(TokenKind::For) => {}
-            _ => return Ok(None),
-        }
+    //     match self.peek_token_kind(0) {
+    //         Some(TokenKind::For) => {}
+    //         _ => return Ok(None),
+    //     }
 
-        self.next_token();
+    //     self.next_token();
 
-        let ident = self.ident()?;
-        self.expect_next(TokenKind::In)?;
+    //     let ident = self.ident()?;
+    //     self.expect_next(TokenKind::In)?;
 
-        let range = match self.expression()? {
-            Some(expr) => match expr.kind {
-                ExprKind::Range(Range { start, end }) => Range { start, end },
-                _ => {
-                    self.report_error("Expected range");
-                    return Err(());
-                }
-            },
-            None => {
-                self.report_error("Expected range");
-                return Err(());
-            }
-        };
+    //     let range = match self.expression()? {
+    //         Some(expr) => match expr.kind {
+    //             ExprKind::Range(Range { start, end }) => Range { start, end },
+    //             _ => {
+    //                 self.report_error("Expected range");
+    //                 return Err(());
+    //             }
+    //         },
+    //         None => {
+    //             self.report_error("Expected range");
+    //             return Err(());
+    //         }
+    //     };
 
-        let block = match self.block()? {
-            Some(block) => block,
-            None => {
-                self.report_error("Expected block");
-                return Err(());
-            }
-        };
+    //     let block = match self.block()? {
+    //         Some(block) => block,
+    //         None => {
+    //             self.report_error("Expected block");
+    //             return Err(());
+    //         }
+    //     };
 
-        Ok(Some(Stmt::For(For {
-            ident,
-            range,
-            block: match block {
-                Stmt::Block(b) => b,
-                _ => unreachable!(),
-            },
-        })))
-    }
+    //     Ok(Some(Stmt::For(For {
+    //         ident,
+    //         range,
+    //         block: match block {
+    //             Stmt::Block(b) => b,
+    //             _ => unreachable!(),
+    //         },
+    //     })))
+    // }
 
-    fn range(&mut self) -> Result<Option<Expr>, ()> {
-        match self.peek_token_kind(0) {
-            Some(TokenKind::Range(start, end)) => {
-                let start = *start;
-                let end = *end;
-                let token = self.next_token().unwrap();
+    // fn range(&mut self) -> Result<Option<Expr>> {
+    //     match self.peek_token_kind(0) {
+    //         Some(TokenKind::Range(start, end)) => {
+    //             let start = *start;
+    //             let end = *end;
+    //             let token = self.next_token().unwrap();
 
-                let range = Expr {
-                    location: token.location,
-                    kind: ExprKind::Range(Range { start, end }),
-                };
-                Ok(Some(range))
-            }
-            _ => Ok(None),
-        }
-    }
+    //             let range = Expr {
+    //                 location: token.location,
+    //                 kind: ExprKind::Range(Range { start, end }),
+    //             };
+    //             Ok(Some(range))
+    //         }
+    //         _ => Ok(None),
+    //     }
+    // }
 
-    fn declaration(&mut self) -> Result<Option<Stmt>, ()> {
+    fn declaration(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered declaration");
 
         match (self.peek_token_kind(0), self.peek_token_kind(1)) {
@@ -223,7 +219,10 @@ impl<'a> Parser<'a> {
                 Some(TokenKind::IntType) => ValueKind::Integer,
                 Some(TokenKind::FloatType) => ValueKind::Float,
                 Some(kind) => {
-                    self.report_error(&format!("Expected type, found {:?}", kind));
+                    self.report_error(&format!(
+                        "Expected type, found {:?}",
+                        kind
+                    ));
                     return Err(());
                 }
                 None => {
@@ -245,7 +244,7 @@ impl<'a> Parser<'a> {
             self.expect_next(TokenKind::Assign)?;
         }
 
-        let mut value = match self.expression()? {
+        let value = match self.expression()? {
             Some(expr) => expr,
             None => {
                 self.report_error("Expected expression");
@@ -253,20 +252,15 @@ impl<'a> Parser<'a> {
             }
         };
 
-        if let ValueKind::Float = var_type {
-            if let ExprKind::Integer(n) = &value.kind {
-                value.kind = ExprKind::Float(*n as f32);
-            }
-        }
-
-        Ok(Some(Stmt::Decl(Decl::Variable(VarDecl {
+        let node = self.arena.alloc(Stmt::Decl(Decl::Variable(VarDecl {
             name: ident,
             value,
             kind: var_type,
-        }))))
+        })));
+        Ok(Some(node))
     }
 
-    fn function_decl(&mut self) -> Result<Option<Stmt>, ()> {
+    fn function_decl(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered function_decl");
 
         match self.peek_token_kind(0) {
@@ -281,32 +275,35 @@ impl<'a> Parser<'a> {
         let param_list = self.parameter_list()?;
         self.expect_next(TokenKind::CloseParen)?;
 
-        let return_type = if let Some(TokenKind::ReturnDecl) = self.peek_token_kind(0) {
-            self.next_token();
-            match self.next_token_kind() {
-                Some(TokenKind::BoolType) => Some(ValueKind::Bool),
-                Some(TokenKind::IntType) => Some(ValueKind::Integer),
-                Some(TokenKind::FloatType) => Some(ValueKind::Float),
-                Some(TokenKind::StringType) => Some(ValueKind::String),
-                _ => panic!("Expected type after return decl"),
-            }
-        } else {
-            None
-        };
+        let return_type =
+            if let Some(TokenKind::ReturnDecl) = self.peek_token_kind(0) {
+                self.next_token();
+                match self.next_token_kind() {
+                    Some(TokenKind::BoolType) => Some(ValueKind::Bool),
+                    Some(TokenKind::IntType) => Some(ValueKind::Integer),
+                    Some(TokenKind::FloatType) => Some(ValueKind::Float),
+                    Some(TokenKind::StringType) => Some(ValueKind::String),
+                    _ => panic!("Expected type after return decl"),
+                }
+            } else {
+                None
+            };
 
         self.expect_next(TokenKind::OpenBrace)?;
         let body = self.statement_list()?;
         self.expect_next(TokenKind::CloseBrace)?;
 
-        Ok(Some(Stmt::Decl(Decl::Function(FunctionDecl {
+        let node = self.arena.alloc(Stmt::Decl(Decl::Function(FunctionDecl {
             name,
             body,
             params: param_list,
             return_type,
-        }))))
+        })));
+
+        Ok(Some(node))
     }
 
-    fn struct_decl(&mut self) -> Result<Option<Stmt>, ()> {
+    fn struct_decl(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered struct_decl");
 
         if let Some(TokenKind::StructDecl) = self.peek_token_kind(0) {
@@ -316,13 +313,17 @@ impl<'a> Parser<'a> {
             let fields = self.parameter_list()?;
             self.expect_next(TokenKind::CloseBrace)?;
 
-            Ok(Some(Stmt::Decl(Decl::Struct(StructDecl { name, fields }))))
+            let node = self
+                .arena
+                .alloc(Stmt::Decl(Decl::Struct(StructDecl { name, fields })));
+
+            Ok(Some(node))
         } else {
             Ok(None)
         }
     }
 
-    fn parameter_list(&mut self) -> Result<ParamList, ()> {
+    fn parameter_list(&mut self) -> Result<ParamList> {
         trace!("Entered parameter_list");
 
         let mut params = ParamList::new();
@@ -337,7 +338,7 @@ impl<'a> Parser<'a> {
                     TokenKind::IntType => ValueKind::Integer,
                     TokenKind::FloatType => ValueKind::Float,
                     TokenKind::StringType => ValueKind::String,
-                    TokenKind::Ident(name) => ValueKind::Struct(Rc::new(name)),
+                    TokenKind::Ident(name) => ValueKind::Struct(name),
                     _ => {
                         self.report_error("Expected type");
                         return Err(());
@@ -346,7 +347,7 @@ impl<'a> Parser<'a> {
                 None => panic!("Sadasdas"),
             };
 
-            params.push(Param { name, kind });
+            params.push(self.arena.alloc(Stmt::Param(Param { name, kind })));
 
             if let Some(TokenKind::Comma) = self.peek_token_kind(0) {
                 self.next_token();
@@ -356,7 +357,7 @@ impl<'a> Parser<'a> {
         Ok(params)
     }
 
-    fn function_call(&mut self) -> Result<Option<Expr>, ()> {
+    fn function_call(&mut self) -> Result<Option<AstNodeId>> {
         match (self.peek_token_kind(0), self.peek_token_kind(1)) {
             (Some(TokenKind::Ident(_)), Some(TokenKind::OpenParen)) => {}
             _ => return Ok(None),
@@ -367,24 +368,25 @@ impl<'a> Parser<'a> {
         let args = self.argument_list()?;
 
         for arg in &args {
-            location = join_locations(location, arg.location);
+            let node = self.arena[*arg].expr();
+            location += node.location;
         }
 
         // Include the closing parenthesis
         location.span.len += 1;
 
-        let funcall = Expr {
+        let funcall = self.arena.alloc(Stmt::Expr(Expr {
             location,
             kind: ExprKind::FunctionCall(FunctionCall { name, args }),
-        };
+        }));
 
         Ok(Some(funcall))
     }
 
-    fn argument_list(&mut self) -> Result<ArgList, ()> {
+    fn argument_list(&mut self) -> Result<ArgList> {
         self.expect_next(TokenKind::OpenParen)?;
-        let mut args = ArgList::new();
 
+        let mut args = ArgList::new();
         while let Some(expr) = self.expression()? {
             args.push(expr);
 
@@ -400,7 +402,7 @@ impl<'a> Parser<'a> {
         Ok(args)
     }
 
-    fn keyword(&mut self) -> Result<Option<Stmt>, ()> {
+    fn keyword(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered keyword");
 
         if let Some(token) = self.peek_token(0) {
@@ -409,15 +411,18 @@ impl<'a> Parser<'a> {
                 TokenKind::Bool(n) => {
                     let kind = ExprKind::Bool(*n);
                     self.next_token();
-                    return Ok(Some(Stmt::Expr(Expr { location, kind })));
+                    let node =
+                        self.arena.alloc(Stmt::Expr(Expr { location, kind }));
+                    return Ok(Some(node));
                 }
                 TokenKind::Return => {
                     self.next_token();
                     let expr = self.expression()?;
-                    return Ok(Some(Stmt::Return(Return {
+                    let node = self.arena.alloc(Stmt::Return(Return {
                         value: expr,
                         location,
-                    })));
+                    }));
+                    return Ok(Some(node));
                 }
                 _ => {}
             }
@@ -426,7 +431,7 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
-    fn if_statement(&mut self) -> Result<Option<Stmt>, ()> {
+    fn if_statement(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered if statement");
 
         if let Some(token) = self.peek_token(0) {
@@ -437,7 +442,8 @@ impl<'a> Parser<'a> {
 
             self.next_token();
 
-            let cond = self.expression()?.expect("Expected expression after if");
+            let cond =
+                self.expression()?.expect("Expected expression after if");
             self.expect_next(TokenKind::OpenBrace)?;
             let body = self.statement_list()?;
             self.expect_next(TokenKind::CloseBrace)?;
@@ -445,23 +451,25 @@ impl<'a> Parser<'a> {
             let else_body = match self.peek_token(0) {
                 Some(Token { kind, .. }) if *kind == TokenKind::Else => {
                     self.next_token();
-                    let stmts = self.statement()?.expect("else stmtlist");
-                    Some(Box::new(stmts))
+                    let stmts = self.statement_list()?;
+                    Some(stmts)
                 }
                 _ => None,
             };
 
-            Ok(Some(Stmt::If(If {
+            let node = self.arena.alloc(Stmt::If(If {
                 cond,
                 body,
                 else_body,
-            })))
+            }));
+
+            Ok(Some(node))
         } else {
             Ok(None)
         }
     }
 
-    fn block(&mut self) -> Result<Option<Stmt>, ()> {
+    fn block(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered block");
 
         if let Some(token) = self.peek_token(0) {
@@ -472,18 +480,20 @@ impl<'a> Parser<'a> {
             self.next_token();
             let statements = self.statement_list()?;
             self.expect_next(TokenKind::CloseBrace)?;
-            Ok(Some(Stmt::Block(statements)))
+            let node = self.arena.alloc(Stmt::Block(statements));
+            Ok(Some(node))
         } else {
             Ok(None)
         }
     }
 
-    fn print(&mut self) -> Result<Option<Stmt>, ()> {
+    fn print(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered print");
 
+        let print = self.context.interner.intern("print");
         match self.peek_token(0) {
             Some(Token { kind, .. }) => {
-                if *kind != TokenKind::Ident("print".to_owned()) {
+                if *kind != TokenKind::Ident(print) {
                     return Ok(None);
                 }
             }
@@ -492,11 +502,12 @@ impl<'a> Parser<'a> {
 
         self.next_token();
         let args = self.argument_list()?;
-        Ok(Some(Stmt::Print(Print { args })))
+        let node = self.arena.alloc(Stmt::Print(Print { args }));
+        Ok(Some(node))
     }
 
-    fn assignment(&mut self) -> Result<Option<Stmt>, ()> {
-        trace!("Entered assignment first: {:?}", self.peek_token(0));
+    fn assignment(&mut self) -> Result<Option<AstNodeId>> {
+        trace!("Entered assignment");
 
         if let Some(token) = self.peek_token(0) {
             match token.kind {
@@ -517,7 +528,7 @@ impl<'a> Parser<'a> {
             _ => return Ok(None),
         };
 
-        let location = self.location;
+        let mut location = self.location;
         let ident = self.ident()?;
         self.next_token();
         let value = match self.expression()? {
@@ -528,40 +539,39 @@ impl<'a> Parser<'a> {
             }
         };
 
-        let location = join_locations(location, value.location);
-
-        Ok(Some(Stmt::Assignment(Assignment {
+        location += self.arena[value].expr().location;
+        let node = self.arena.alloc(Stmt::Assignment(Assignment {
             ident,
             value,
             op,
             location,
-        })))
+        }));
+
+        Ok(Some(node))
     }
 
-    fn expression(&mut self) -> Result<Option<Expr>, ()> {
+    fn expression(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered expression");
 
         if let Some(lhs) = self.logical_expr_a()? {
             if let Some(op) = self.peek_token(0) {
                 let op = match op.kind {
                     TokenKind::And => BinaryOpKind::And,
-                    _ => return Ok(Some(lhs)),
+                    _ => {
+                        return Ok(Some(lhs));
+                    }
                 };
 
                 self.next_token();
                 let rhs = self.expression()?.expect("No rhs in expression");
 
-                let mut location = lhs.location;
-                location.span.len += rhs.location.span.len;
+                let location = self.arena[lhs].expr().location
+                    + self.arena[rhs].expr().location;
 
-                let expr = Expr {
+                let expr = self.arena.alloc(Stmt::Expr(Expr {
                     location,
-                    kind: ExprKind::BinaryOp(BinaryOp {
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                        op,
-                    }),
-                };
+                    kind: ExprKind::BinaryOp(BinaryOp { lhs, rhs, op }),
+                }));
 
                 Ok(Some(expr))
             } else {
@@ -572,7 +582,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn logical_expr_a(&mut self) -> Result<Option<Expr>, ()> {
+    fn logical_expr_a(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered expression");
 
         if let Some(lhs) = self.logical_expr_b()? {
@@ -584,17 +594,13 @@ impl<'a> Parser<'a> {
 
                 self.next_token();
                 let rhs = self.logical_expr_a()?.expect("No rhs in expression");
+                let location = self.arena[lhs].expr().location
+                    + self.arena[rhs].expr().location;
 
-                let location = join_locations(lhs.location, rhs.location);
-
-                let expr = Expr {
+                let expr = self.arena.alloc(Stmt::Expr(Expr {
                     location,
-                    kind: ExprKind::BinaryOp(BinaryOp {
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                        op,
-                    }),
-                };
+                    kind: ExprKind::BinaryOp(BinaryOp { lhs, rhs, op }),
+                }));
 
                 Ok(Some(expr))
             } else {
@@ -605,7 +611,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn logical_expr_b(&mut self) -> Result<Option<Expr>, ()> {
+    fn logical_expr_b(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered expression");
 
         if let Some(lhs) = self.logical_expr_c()? {
@@ -622,16 +628,13 @@ impl<'a> Parser<'a> {
 
                 self.next_token();
                 let rhs = self.logical_expr_b()?.expect("No rhs in expression");
-                let location = join_locations(lhs.location, rhs.location);
+                let location = self.arena[lhs].expr().location
+                    + self.arena[rhs].expr().location;
 
-                let expr = Expr {
+                let expr = self.arena.alloc(Stmt::Expr(Expr {
                     location,
-                    kind: ExprKind::BinaryOp(BinaryOp {
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                        op,
-                    }),
-                };
+                    kind: ExprKind::BinaryOp(BinaryOp { lhs, rhs, op }),
+                }));
 
                 Ok(Some(expr))
             } else {
@@ -642,7 +645,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn logical_expr_c(&mut self) -> Result<Option<Expr>, ()> {
+    fn logical_expr_c(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered expression");
 
         if let Some(lhs) = self.factor()? {
@@ -654,16 +657,13 @@ impl<'a> Parser<'a> {
 
                 self.next_token();
                 let rhs = self.logical_expr_b()?.expect("No rhs in expression");
-                let location = join_locations(lhs.location, rhs.location);
+                let location = self.arena[lhs].expr().location
+                    + self.arena[rhs].expr().location;
 
-                let expr = Expr {
+                let expr = self.arena.alloc(Stmt::Expr(Expr {
                     location,
-                    kind: ExprKind::BinaryOp(BinaryOp {
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                        op,
-                    }),
-                };
+                    kind: ExprKind::BinaryOp(BinaryOp { lhs, rhs, op }),
+                }));
 
                 Ok(Some(expr))
             } else {
@@ -674,7 +674,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn factor(&mut self) -> Result<Option<Expr>, ()> {
+    fn factor(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered factor");
 
         if let Some(lhs) = self.term()? {
@@ -687,16 +687,13 @@ impl<'a> Parser<'a> {
 
                 self.next_token();
                 let rhs = self.factor()?.expect("No rhs in expression");
-                let location = join_locations(lhs.location, rhs.location);
+                let location = self.arena[lhs].expr().location
+                    + self.arena[rhs].expr().location;
 
-                let expr = Expr {
+                let expr = self.arena.alloc(Stmt::Expr(Expr {
                     location,
-                    kind: ExprKind::BinaryOp(BinaryOp {
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                        op,
-                    }),
-                };
+                    kind: ExprKind::BinaryOp(BinaryOp { lhs, rhs, op }),
+                }));
 
                 Ok(Some(expr))
             } else {
@@ -707,7 +704,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn term(&mut self) -> Result<Option<Expr>, ()> {
+    fn term(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Entered term");
 
         if let Some(lhs) = self.atom()? {
@@ -721,17 +718,13 @@ impl<'a> Parser<'a> {
 
                 self.next_token();
                 let rhs = self.term()?.expect("No rhs in expression");
+                let location = self.arena[lhs].expr().location
+                    + self.arena[rhs].expr().location;
 
-                let location = join_locations(lhs.location, rhs.location);
-
-                let expr = Expr {
+                let expr = self.arena.alloc(Stmt::Expr(Expr {
                     location,
-                    kind: ExprKind::BinaryOp(BinaryOp {
-                        lhs: Box::new(lhs),
-                        rhs: Box::new(rhs),
-                        op,
-                    }),
-                };
+                    kind: ExprKind::BinaryOp(BinaryOp { lhs, rhs, op }),
+                }));
 
                 Ok(Some(expr))
             } else {
@@ -742,7 +735,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn atom(&mut self) -> Result<Option<Expr>, ()> {
+    fn atom(&mut self) -> Result<Option<AstNodeId>> {
         trace!("Enteted atom");
 
         if let Some(token) = self.peek_token(0) {
@@ -757,29 +750,34 @@ impl<'a> Parser<'a> {
                     let mut location = token.location;
                     self.expect_next(TokenKind::Sub)?;
                     let expr = self.atom()?.expect("expected expression");
-                    location.span.len += expr.location.span.len;
-
-                    return Ok(Some(Expr {
+                    location.span.len +=
+                        self.arena[expr].expr().location.span.len;
+                    let expr = self.arena.alloc(Stmt::Expr(Expr {
                         location,
                         kind: ExprKind::UnaryOp(UnaryOp {
-                            value: Box::new(expr),
+                            value: expr,
                             op: UnaryOpKind::Neg,
                         }),
                     }));
+
+                    return Ok(Some(expr));
                 }
                 TokenKind::Not => {
                     let mut location = token.location;
                     self.expect_next(TokenKind::Sub)?;
                     let expr = self.expression()?.expect("expected expression");
-                    location.span.len += expr.location.span.len;
+                    location.span.len +=
+                        self.arena[expr].expr().location.span.len;
 
-                    return Ok(Some(Expr {
+                    let expr = self.arena.alloc(Stmt::Expr(Expr {
                         location,
                         kind: ExprKind::UnaryOp(UnaryOp {
-                            value: Box::new(expr),
+                            value: expr,
                             op: UnaryOpKind::Not,
                         }),
                     }));
+
+                    return Ok(Some(expr));
                 }
                 TokenKind::OpenParen => {
                     self.expect_next(TokenKind::OpenParen)?;
@@ -790,9 +788,9 @@ impl<'a> Parser<'a> {
                 _ => return Ok(None),
             }
 
-            if let Some(range) = self.range()? {
-                return Ok(Some(range));
-            }
+            // if let Some(range) = self.range()? {
+            //     return Ok(Some(range));
+            // }
 
             if let Some(input) = self.input()? {
                 return Ok(Some(input));
@@ -806,34 +804,44 @@ impl<'a> Parser<'a> {
                 Some(token) => {
                     match token.kind {
                         TokenKind::Integer(n) => {
-                            return Ok(Some(Expr {
-                                location: token.location,
-                                kind: ExprKind::Integer(n),
-                            }))
+                            return Ok(Some(self.arena.alloc(Stmt::Expr(
+                                Expr {
+                                    location: token.location,
+                                    kind: ExprKind::Integer(n),
+                                },
+                            ))));
                         }
                         TokenKind::Float(n) => {
-                            return Ok(Some(Expr {
-                                location: token.location,
-                                kind: ExprKind::Float(n),
-                            }))
+                            return Ok(Some(self.arena.alloc(Stmt::Expr(
+                                Expr {
+                                    location: token.location,
+                                    kind: ExprKind::Float(n),
+                                },
+                            ))));
                         }
                         TokenKind::String(n) => {
-                            return Ok(Some(Expr {
-                                location: token.location,
-                                kind: ExprKind::StringLiteral(Rc::new(n)),
-                            }))
+                            return Ok(Some(self.arena.alloc(Stmt::Expr(
+                                Expr {
+                                    location: token.location,
+                                    kind: ExprKind::StringLiteral(n),
+                                },
+                            ))));
                         }
                         TokenKind::Bool(n) => {
-                            return Ok(Some(Expr {
-                                location: token.location,
-                                kind: ExprKind::Bool(n),
-                            }))
+                            return Ok(Some(self.arena.alloc(Stmt::Expr(
+                                Expr {
+                                    location: token.location,
+                                    kind: ExprKind::Bool(n),
+                                },
+                            ))));
                         }
                         TokenKind::Ident(n) => {
-                            return Ok(Some(Expr {
-                                location: token.location,
-                                kind: ExprKind::Ident(n),
-                            }))
+                            return Ok(Some(self.arena.alloc(Stmt::Expr(
+                                Expr {
+                                    location: token.location,
+                                    kind: ExprKind::Ident(n),
+                                },
+                            ))));
                         }
                         _ => return Ok(None),
                     };
@@ -845,29 +853,35 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
-    fn ident(&mut self) -> Result<String, ()> {
+    fn ident(&mut self) -> Result<Symbol> {
         let token = match self.next_token() {
             Some(token) => token,
             None => {
-                self.report_error("Tried to get an identifier when no tokens are left");
+                self.report_error(
+                    "Tried to get an identifier when no tokens are left",
+                );
                 return Err(());
             }
         };
         match token.kind {
             TokenKind::Ident(n) => Ok(n),
             kind => {
-                self.report_error(&format!("Expected identifier, found {:?}", kind));
+                self.report_error(&format!(
+                    "Expected identifier, found {:?}",
+                    kind
+                ));
                 Err(())
             }
         }
     }
 
-    fn input(&mut self) -> Result<Option<Expr>, ()> {
-        trace!("Entered input, {:?}", self.peek_token(0));
+    fn input(&mut self) -> Result<Option<AstNodeId>> {
+        trace!("Entered input");
 
+        let input = self.context.interner.intern("input");
         match self.peek_token(0) {
             Some(Token { kind, .. }) => {
-                if *kind != TokenKind::Ident("input".to_owned()) {
+                if *kind != TokenKind::Ident(input) {
                     return Ok(None);
                 }
             }
@@ -878,15 +892,52 @@ impl<'a> Parser<'a> {
         let mut location = token.location;
         let message = self.expression()?;
 
-        if let Some(message) = &message {
-            location.span.len += message.location.span.len;
+        if let Some(message) = message {
+            location.span.len += self.arena[message].expr().location.span.len;
         }
 
-        Ok(Some(Expr {
+        Ok(Some(self.arena.alloc(Stmt::Expr(Expr {
             location,
-            kind: ExprKind::Input(Input {
-                message: message.map(Box::new),
-            }),
-        }))
+            kind: ExprKind::Input(Input { message }),
+        }))))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::collections::VecDeque;
+
+    use crate::location::{Location, Span};
+
+    fn token(kind: TokenKind) -> Token {
+        Token {
+            kind,
+            location: Location {
+                file: Symbol::new(0),
+                line: 0,
+                span: Span { start: 0, len: 0 },
+            },
+        }
+    }
+
+    #[test]
+    fn test_assignment_infer() {
+        let mut context = Context::new();
+        let mut tokens = VecDeque::new();
+        tokens.push_back(token(TokenKind::Ident(
+            context.interner.intern("name"),
+        )));
+        tokens.push_back(token(TokenKind::VarDecl));
+        tokens.push_back(token(TokenKind::Ident(
+            context.interner.intern("Jonas"),
+        )));
+
+        let result = parse_ast(tokens, &mut context);
+        assert!(result.is_ok());
+
+        let result = result.unwrap();
+        assert_eq!(result.statements.len(), 1);
     }
 }

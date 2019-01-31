@@ -1,36 +1,35 @@
+use std::collections::VecDeque;
+
 use crate::common::{Context, Symbol};
 use crate::location::{Location, Span};
 use crate::token::{Token, TokenKind};
 
-use std::collections::VecDeque;
-use std::fs;
-use std::str;
-
-macro_rules! location {
+macro_rules! str_or_err {
     ($self:expr, $start:expr) => {
-        Location {
-            line: $self.line,
-            file: $self.file,
-            span: Span {
-                start: $start as u32,
-                len: ($self.pos - $start) as u32,
-            },
+        match std::str::from_utf8(&$self.source[$start..$self.pos]) {
+            Ok(s) => s,
+            Err(_) => {
+                $self
+                    .context
+                    .report_error("Invalid UTF-8", $self.make_location($start));
+                return Err(());
+            }
         }
     };
 }
 
-pub fn generate_tokens(file: &str, context: &mut Context) -> Result<VecDeque<Token>, ()> {
-    let interned_file = context.interner.intern(file);
-    let source = match fs::read(file) {
-        Ok(src) => src,
-        Err(e) => {
-            eprintln!("Error: failed to read source file ({})", e);
-            return Err(());
-        }
-    };
+pub fn generate_tokens(
+    source: &[u8],
+    file: Symbol,
+    context: &mut Context,
+) -> Result<VecDeque<Token>, ()> {
+    let mut lexer = Lexer::new(source, file, context);
+    let mut tokens = VecDeque::new();
+    while let Some(token) = lexer.next_token()? {
+        tokens.push_back(token);
+    }
 
-    let lexer = Lexer::new(interned_file, context);
-    lexer.lex(source)
+    Ok(tokens)
 }
 
 struct Lexer<'a> {
@@ -38,21 +37,33 @@ struct Lexer<'a> {
     line: u32,
     column: u32,
     pos: usize,
-    source: Vec<u8>,
-    tokens: VecDeque<Token>,
+    source: &'a [u8],
     context: &'a mut Context,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(file: Symbol, context: &'a mut Context) -> Self {
-        Self {
+    pub fn new(
+        source: &'a [u8],
+        file: Symbol,
+        context: &'a mut Context,
+    ) -> Self {
+        Lexer {
+            context,
             file,
             line: 1,
             column: 1,
             pos: 0,
-            tokens: VecDeque::new(),
-            source: Vec::new(),
-            context,
+            source,
+        }
+    }
+    fn make_location(&self, start: usize) -> Location {
+        Location {
+            line: self.line,
+            file: self.file,
+            span: Span {
+                start: start as u32,
+                len: (self.pos - start) as u32,
+            },
         }
     }
 
@@ -61,12 +72,18 @@ impl<'a> Lexer<'a> {
         self.column += 1;
     }
 
-    pub fn lex(mut self, source: Vec<u8>) -> Result<VecDeque<Token>, ()> {
-        self.source = source;
+    fn advance_while(&mut self, predicate: impl Fn(char) -> bool) {
+        while self.pos < self.source.len() {
+            if !predicate(self.source[self.pos] as char) {
+                break;
+            }
+            self.advance()
+        }
+    }
 
+    pub fn next_token(&mut self) -> Result<Option<Token>, ()> {
         while self.pos < self.source.len() {
             let start = self.pos;
-            let column = self.column;
 
             match self.source[self.pos] as char {
                 '\n' => {
@@ -75,27 +92,11 @@ impl<'a> Lexer<'a> {
                     self.pos += 1;
                 }
                 c if c.is_whitespace() => {
-                    self.advance();
+                    self.advance_while(char::is_whitespace);
                 }
                 c if c.is_alphabetic() => {
-                    self.advance();
-                    while self.pos < self.source.len() {
-                        let c = self.source[self.pos] as char;
-                        if !c.is_alphanumeric() && c != '_' {
-                            break;
-                        }
-                        self.advance();
-                    }
-
-                    let location = location!(self, start);
-
-                    let string = match str::from_utf8(&self.source[start..self.pos]) {
-                        Ok(s) => s,
-                        Err(_) => {
-                            self.context.report_error("Invalid UTF-8", location);
-                            return Err(());
-                        }
-                    };
+                    self.advance_while(|c| c.is_alphanumeric() || c == '_');
+                    let string = str_or_err!(self, start);
 
                     let kind = match string {
                         "if" => TokenKind::If,
@@ -112,76 +113,50 @@ impl<'a> Lexer<'a> {
                         "true" => TokenKind::Bool(true),
                         "false" => TokenKind::Bool(false),
                         "struct" => TokenKind::StructDecl,
-                        _ => TokenKind::Ident(self.context.interner.intern(string)),
+                        other => TokenKind::Ident(
+                            self.context.interner.intern(other),
+                        ),
                     };
 
-                    let token = Token { kind, location };
-                    self.tokens.push_back(token);
+                    return Ok(Some(Token {
+                        kind,
+                        location: self.make_location(start),
+                    }));
                 }
                 c if c.is_numeric() => {
-                    self.advance();
+                    self.advance_while(|c| c.is_numeric() || c == '.');
+                    let string = str_or_err!(self, start);
+                    let location = self.make_location(start);
 
-                    while self.pos < self.source.len() {
-                        let c = self.source[self.pos] as char;
-                        if !c.is_numeric() && c != '.' {
-                            break;
-                        }
-                        self.advance();
-                    }
-
-                    let location = location!(self, start);
-
-                    let s = match str::from_utf8(&self.source[start..self.pos]) {
-                        Ok(s) => s,
-                        Err(_) => {
-                            self.context.report_error("Invalid UTF-8", location);
-                            return Err(());
-                        }
-                    };
-
-                    let kind = if let Ok(integer) = s.parse() {
+                    let kind = if let Ok(integer) = string.parse() {
                         TokenKind::Integer(integer)
-                    } else if let Ok(float) = s.parse() {
+                    } else if let Ok(float) = string.parse() {
                         TokenKind::Float(float)
                     } else {
-                        self.context
-                            .report_error("Failed to parse number", location);
-                        return Err(());
-                    };
-
-                    self.tokens.push_back(Token { kind, location });
-                }
-                c if is_operator(c) => {
-                    self.advance();
-
-                    while self.pos < self.source.len() {
-                        let c = self.source[self.pos] as char;
-                        if !is_operator(c) {
-                            break;
-                        }
-                        self.advance();
-                    }
-
-                    let location = location!(self, start);
-
-                    let operator = match str::from_utf8(&self.source[start..self.pos]) {
-                        Ok(op) => op,
-                        Err(_) => {
-                            self.context.report_error("Invalid UTF-8", location);
-                            return Err(());
-                        }
-                    };
-
-                    if operator == "//" {
-                        while self.pos < self.source.len() {
-                            let c = self.source[self.pos] as char;
-                            self.advance();
-
-                            if c == '\n' {
-                                break;
+                        let mut iter = string.split("..");
+                        let start = iter.next();
+                        let end = iter.next();
+                        match (start.map(str::parse), end.map(str::parse)) {
+                            (Some(Ok(start)), Some(Ok(end))) => {
+                                TokenKind::Range(start, end)
+                            }
+                            other => {
+                                self.context
+                                    .report_error(&format!("Invalid syntax. Expected range, found {:?}", other), location);
+                                return Err(());
                             }
                         }
+                    };
 
+                    return Ok(Some(Token { kind, location }));
+                }
+                c if is_operator(c) => {
+                    self.advance_while(is_operator);
+                    let location = self.make_location(start);
+                    let operator = str_or_err!(self, start);
+
+                    if operator == "//" {
+                        self.advance_while(|c| c != '\n');
                         continue;
                     }
 
@@ -211,17 +186,20 @@ impl<'a> Lexer<'a> {
                         ":" => TokenKind::Colon,
                         other => {
                             self.context.report_error(
-                                &format!("Could not lex unknown operator '{}'", other),
-                                location!(self, start),
+                                &format!(
+                                    "Could not lex unknown operator '{}'",
+                                    other
+                                ),
+                                self.make_location(start),
                             );
                             return Err(());
                         }
                     };
 
-                    self.tokens.push_back(Token {
+                    return Ok(Some(Token {
                         kind,
-                        location: location!(self, start),
-                    })
+                        location: self.make_location(start),
+                    }));
                 }
                 c if is_delimiter(c) => {
                     let kind = match c {
@@ -239,49 +217,37 @@ impl<'a> Lexer<'a> {
 
                     self.advance();
 
-                    self.tokens.push_back(Token {
+                    return Ok(Some(Token {
                         kind,
-                        location: location!(self, start),
-                    })
+                        location: self.make_location(start),
+                    }));
                 }
                 '"' => {
                     self.advance();
+                    self.advance_while(|c| c != '"');
+                    let location = self.make_location(start);
+                    let string = str_or_err!(self, start);
+                    let kind =
+                        TokenKind::String(self.context.interner.intern(string));
+                    self.advance();
 
-                    while self.pos < self.source.len() {
-                        let c = self.source[self.pos] as char;
-                        self.advance();
-                        if c == '"' {
-                            break;
-                        }
-                    }
-
-                    let location = location!(self, start);
-
-                    let string = match str::from_utf8(&self.source[start..self.pos]) {
-                        Ok(s) => s,
-                        Err(_) => {
-                            self.context.report_error("Invalid UTF-8", location);
-                            return Err(());
-                        }
-                    };
-
-                    self.tokens.push_back(Token {
-                        kind: TokenKind::String(self.context.interner.intern(string)),
-                        location: location!(self, start),
-                    });
+                    return Ok(Some(Token {
+                        kind,
+                        location: self.make_location(start),
+                    }));
                 }
                 '.' => {
                     self.advance();
 
-                    self.tokens.push_back(Token {
+                    return Ok(Some(Token {
                         kind: TokenKind::Field,
-                        location: location!(self, start),
-                    })
+                        location: self.make_location(start),
+                    }));
                 }
                 other => {
                     self.context.report_error(
                         &format!("Could not lex unknown token '{}'", other),
-                        location!(self, start),
+                        self.make_location(start),
                     );
 
                     return Err(());
@@ -289,8 +255,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        println!("{:#?}", self.tokens);
-        Ok(self.tokens)
+        Ok(None)
     }
 }
 
@@ -306,14 +271,13 @@ fn is_delimiter(ch: char) -> bool {
 mod tests {
     use super::*;
 
-    fn assert_lex(source: &[u8], tokens: &[TokenKind]) {
+    fn assert_lex(source: &[u8], expected_tokens: &[TokenKind]) {
         let mut context = Context::new();
-        let lexer = Lexer::new(context.interner.intern("test.txt"), &mut context);
-        let lexed_tokens = lexer.lex(Vec::from(source));
-        assert!(lexed_tokens.is_ok());
+        let tokens = generate_tokens(source, Symbol::new(0), &mut context);
+        assert!(tokens.is_ok());
 
-        for (found, expected) in lexed_tokens.unwrap().iter().zip(tokens) {
-            assert!(found.kind == *expected);
+        for (found, expected) in tokens.unwrap().iter().zip(expected_tokens) {
+            assert_eq!(found.kind, *expected);
         }
     }
 
@@ -392,7 +356,7 @@ mod tests {
         assert_lex(
             b"age: int = 27",
             &[
-                TokenKind::Ident(Symbol::new(1)),
+                TokenKind::Ident(Symbol::new(0)),
                 TokenKind::Colon,
                 TokenKind::IntType,
                 TokenKind::Assign,
@@ -406,20 +370,23 @@ mod tests {
         assert_lex(
             b"hello // there friend\no",
             &[
+                TokenKind::Ident(Symbol::new(0)),
                 TokenKind::Ident(Symbol::new(1)),
-                TokenKind::Ident(Symbol::new(2)),
             ],
         )
     }
 
-    // #[test]
-    // fn lex_range() {
-    //     assert_lex(b" 5..10", &[TokenKind::Range(5, 10)]);
-    // }
+    #[test]
+    fn lex_range() {
+        assert_lex(b" 5..10", &[TokenKind::Range(5, 10)]);
+    }
 
     #[test]
     fn lex_int() {
-        assert_lex(b" 50 24", &[TokenKind::Integer(50), TokenKind::Integer(24)]);
+        assert_lex(
+            b" 50 24",
+            &[TokenKind::Integer(50), TokenKind::Integer(24)],
+        );
     }
 
     #[test]
@@ -443,8 +410,8 @@ mod tests {
         assert_lex(
             b"foo bar_Baz",
             &[
+                TokenKind::Ident(Symbol::new(0)),
                 TokenKind::Ident(Symbol::new(1)),
-                TokenKind::Ident(Symbol::new(2)),
             ],
         )
     }
@@ -455,7 +422,7 @@ mod tests {
             b" if cool_things {} else true",
             &[
                 TokenKind::If,
-                TokenKind::Ident(Symbol::new(1)),
+                TokenKind::Ident(Symbol::new(0)),
                 TokenKind::OpenBrace,
                 TokenKind::CloseBrace,
                 TokenKind::Else,

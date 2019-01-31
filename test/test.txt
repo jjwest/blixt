@@ -1,22 +1,24 @@
-fn main() {
-   name := "Jonas"
-   age := 28
-   phrase := input("Enter your catchphrase: ")
+10 + "h" - 5.0 + "20"
 
-   present(name, age, phrase)
-   a := 12
-   b := 4
-   print("% is a multiple of %? %\n", a, b, is_multiple(a, b))
+// fn main() {
+//    name := "Jonas"
+//    age := 28
+//    phrase := input("Enter your catchphrase: ")
 
-   print()
-}
+//    present(name, age, phrase)
+//    a := 12
+//    b := 4
+//    print("% is a multiple of %? %\n", a, b, is_multiple(a, b))
 
-fn present(name: string, age: int, phrase: string) {
-   print("% is % years old and usually says \"%\"\n", name, age, phrase)
-}
+//    print()
+// }
 
-fn is_multiple(a: int, b: int) -> bool {
-   return a % b == 0
-}
+// fn present(name: string, age: int, phrase: string) {
+//    print("% is % years old and usually says \"%\"\n", name, age, phrase)
+// }
 
-main()
+// fn is_multiple(a: int, b: int) -> bool {
+//    return a % b == 0
+// }
+
+// main()

@@ -1,12 +1,11 @@
 use crate::ast::{
-    Assignment, AssignmentKind, Ast, BinaryOp, BinaryOpKind, Decl, Expr, ExprKind, For,
-    FunctionCall, If, Input, Print, Return, Stmt, StmtList, UnaryOp, UnaryOpKind,
+    Assignment, AssignmentKind, Ast, AstNode, AstNodeList, BinaryOp, BinaryOpKind, Decl, Expr,
+    ExprKind, For, FunctionCall, If, Input, Print, Return, UnaryOp, UnaryOpKind,
 };
 use crate::common::Context;
 use crate::location::Location;
 use crate::primitives::{Value, ValueKind};
 use crate::scope::Scope;
-use crate::traits::{Visitable, Visitor};
 
 use std::io::{self, Write};
 use std::rc::Rc;
@@ -45,19 +44,19 @@ impl<'a, 'ctxt> Interpreter<'a, 'ctxt> {
 }
 
 impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
-    fn visit_stmt_list(&mut self, node: &'a StmtList) {
+    fn visit_stmt_list(&mut self, node: &'a AstNodeList) {
         trace!("Visit stmt_list");
 
         for stmt in node {
             stmt.accept(self);
 
-            if let Stmt::Return(_) = stmt {
+            if let AstNode::Return(_) = stmt {
                 break;
             }
         }
     }
 
-    fn visit_stmt(&mut self, node: &'a Stmt) {
+    fn visit_stmt(&mut self, node: &'a AstNode) {
         trace!("Visit stmt");
         node.accept(self)
     }
@@ -245,7 +244,7 @@ impl<'a, 'ctxt> Visitor<'a> for Interpreter<'a, 'ctxt> {
         }
     }
 
-    fn visit_block(&mut self, node: &'a StmtList) {
+    fn visit_block(&mut self, node: &'a AstNodeList) {
         trace!("Visit block");
         self.scope.new_scope_level();
         self.visit_stmt_list(node);
